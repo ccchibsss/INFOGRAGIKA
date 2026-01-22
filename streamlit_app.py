@@ -948,25 +948,6 @@ class InfographicGenerator:
 class UIComponents:
    """Класс для компонентов пользовательского интерфейса"""
    
-   _instance_counter = {}
-   
-   @classmethod
-   def _get_unique_key(cls, base_name, context=""):
-       """Генерация уникального ключа с учетом контекста"""
-       if context:
-           full_name = f"{context}_{base_name}"
-       else:
-           full_name = base_name
-           
-       if full_name not in cls._instance_counter:
-           cls._instance_counter[full_name] = 0
-       else:
-           cls._instance_counter[full_name] += 1
-           
-       if cls._instance_counter[full_name] > 0:
-           return f"{full_name}_{cls._instance_counter[full_name]}"
-       return full_name
-
    @staticmethod
    def render_sidebar():
        """Отрисовка боковой панели"""
@@ -978,7 +959,7 @@ class UIComponents:
                "Выберите Excel файл",
                type=['xlsx', 'xls'],
                help="Файл должен содержать данные о товарах",
-               key="sidebar_main_file_uploader"
+               key="sidebar_file_uploader"
            )
            
            if uploaded_file:
@@ -998,7 +979,7 @@ class UIComponents:
                    preview_rows = st.slider(
                        "Строк для предпросмотра", 
                        5, 50, 10,
-                       key="sidebar_data_preview_rows_slider"
+                       key="sidebar_preview_rows_slider"
                    )
                    st.dataframe(st.session_state.df.head(preview_rows))
            
@@ -1011,7 +992,7 @@ class UIComponents:
                format_func=lambda x: f"{InfographicTemplates.TEMPLATES[x]['name']} - "
                                    f"{InfographicTemplates.TEMPLATES[x]['description']}",
                index=template_options.index(current_template) if current_template in template_options else 0,
-               key="sidebar_template_selectbox"
+               key="sidebar_template_select"
            )
            st.session_state.current_template = selected_template
            
@@ -1028,7 +1009,7 @@ class UIComponents:
                    index=["PNG", "JPEG", "WebP"].index(
                        st.session_state.export_settings.get('format', 'PNG')
                    ),
-                   key="sidebar_export_format_selectbox"
+                   key="sidebar_export_format_select"
                )
                st.session_state.export_settings['format'] = export_format
            with col2:
@@ -1112,7 +1093,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('top_left', available_columns[0])
                    ) if st.session_state.column_mapping.get('top_left') in available_columns else 0,
-                   key="mapping_col1_top_left_select"
+                   key="mapping_top_left_select"
                )
                st.session_state.column_mapping['top_right'] = st.selectbox(
                    "Верхний правый угол (Цена)",
@@ -1120,7 +1101,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('top_right', available_columns[1])
                    ) if st.session_state.column_mapping.get('top_right') in available_columns and len(available_columns) > 1 else min(1, len(available_columns)-1),
-                   key="mapping_col1_top_right_select"
+                   key="mapping_top_right_select"
                )
                st.session_state.column_mapping['image_url'] = st.selectbox(
                    "URL основного изображения",
@@ -1128,7 +1109,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('image_url', available_columns[2])
                    ) if st.session_state.column_mapping.get('image_url') in available_columns and len(available_columns) > 2 else min(2, len(available_columns)-1),
-                   key="mapping_col1_image_url_select"
+                   key="mapping_image_url_select"
                )
            
            with col2:
@@ -1138,7 +1119,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('bottom_left', available_columns[3])
                    ) if st.session_state.column_mapping.get('bottom_left') in available_columns and len(available_columns) > 3 else min(3, len(available_columns)-1),
-                   key="mapping_col2_bottom_left_select"
+                   key="mapping_bottom_left_select"
                )
                st.session_state.column_mapping['bottom_right'] = st.selectbox(
                    "Нижний правый угол (Скидка/Детали)",
@@ -1146,7 +1127,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('bottom_right', available_columns[4])
                    ) if st.session_state.column_mapping.get('bottom_right') in available_columns and len(available_columns) > 4 else min(4, len(available_columns)-1),
-                   key="mapping_col2_bottom_right_select"
+                   key="mapping_bottom_right_select"
                )
                st.session_state.column_mapping['filename'] = st.selectbox(
                    "Имена файлов (источник)",
@@ -1154,7 +1135,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('filename', available_columns[0])
                    ) if st.session_state.column_mapping.get('filename') in available_columns else 0,
-                   key="mapping_col2_filename_select"
+                   key="mapping_filename_select"
                )
            
            # Дополнительная колонка для изображения наложения
@@ -1185,9 +1166,12 @@ class UIComponents:
                )
    
    @staticmethod
-   def render_font_settings():
-       """Отрисовка настроек шрифтов"""
+   def render_font_settings(tab_context=""):
+       """Отрисовка настроек шрифтов с учетом контекста вкладки"""
        st.subheader("🔤 Настройки шрифтов")
+       
+       # Создаем уникальный префикс для ключей на основе контекста
+       prefix = f"font_{tab_context}" if tab_context else "font"
        
        col1, col2 = st.columns(2)
        
@@ -1200,7 +1184,7 @@ class UIComponents:
                type=['ttf', 'otf', 'TTF', 'OTF'],
                accept_multiple_files=True,
                help="Загрузите свои шрифты для использования в инфографике",
-               key="font_settings_font_uploader"
+               key=f"{prefix}_uploader"
            )
            
            if uploaded_fonts:
@@ -1235,7 +1219,7 @@ class UIComponents:
                    "Основной шрифт",
                    font_options,
                    index=current_main_index,
-                   key="font_settings_main_font_select"
+                   key=f"{prefix}_main_font_select"
                )
                
                if main_font_name:
@@ -1250,7 +1234,7 @@ class UIComponents:
                    "Жирный шрифт (для заголовков)",
                    ["Тот же что основной"] + font_options,
                    index=0 if current_bold_font == current_main_font else current_bold_index + 1,
-                   key="font_settings_bold_font_select"
+                   key=f"{prefix}_bold_font_select"
                )
                
                if bold_font_name == "Тот же что основной":
@@ -1265,18 +1249,21 @@ class UIComponents:
                    0.5, 2.0,
                    st.session_state.font_settings.get('font_size_multiplier', 1.0),
                    0.1,
-                   key="font_settings_font_size_multiplier"
+                   key=f"{prefix}_size_multiplier_slider"
                )
                st.session_state.font_settings['font_size_multiplier'] = font_size_multiplier
                
                st.caption(f"Текущий шрифт: {main_font_name}")
    
    @staticmethod
-   def render_text_offset_settings():
-       """Отрисовка настроек смещения текста"""
+   def render_text_offset_settings(tab_context=""):
+       """Отрисовка настроек смещения текста с учетом контекста вкладки"""
        if st.session_state.get('df') is not None:
            st.subheader("🎯 Настройки смещения текста")
            st.info("Регулируйте положение текста на изображении")
+           
+           # Создаем уникальный префикс для ключей на основе контекста
+           prefix = f"offset_{tab_context}" if tab_context else "offset"
            
            # Кнопка для включения симметричных смещений
            col1, col2 = st.columns(2)
@@ -1285,7 +1272,7 @@ class UIComponents:
                    "🔄 Симметричные смещения для всех углов",
                    value=st.session_state.get('symmetrical_offsets', False),
                    help="При включении все углы будут иметь одинаковые смещения",
-                   key="offset_symmetrical_check"
+                   key=f"{prefix}_symmetrical_check"
                )
                st.session_state.symmetrical_offsets = symmetrical
            
@@ -1305,13 +1292,13 @@ class UIComponents:
                        "Смещение X (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_left'].get('x_offset', 0),
-                       key="offset_top_left_x"
+                       key=f"{prefix}_top_left_x"
                    )
                    y_offset = st.number_input(
                        "Смещение Y (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_left'].get('y_offset', 0),
-                       key="offset_top_left_y"
+                       key=f"{prefix}_top_left_y"
                    )
                    st.session_state.text_offset_settings['top_left'] = {
                        'x_offset': x_offset,
@@ -1328,13 +1315,13 @@ class UIComponents:
                        "Смещение X (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_right'].get('x_offset', 0),
-                       key="offset_top_right_x"
+                       key=f"{prefix}_top_right_x"
                    )
                    y_offset = st.number_input(
                        "Смещение Y (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_right'].get('y_offset', 0),
-                       key="offset_top_right_y"
+                       key=f"{prefix}_top_right_y"
                    )
                    st.session_state.text_offset_settings['top_right'] = {
                        'x_offset': x_offset,
@@ -1352,13 +1339,13 @@ class UIComponents:
                        "Смещение X (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['bottom_left'].get('x_offset', 0),
-                       key="offset_bottom_left_x"
+                       key=f"{prefix}_bottom_left_x"
                    )
                    y_offset = st.number_input(
                        "Смещение Y (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['bottom_left'].get('y_offset', 0),
-                       key="offset_bottom_left_y"
+                       key=f"{prefix}_bottom_left_y"
                    )
                    st.session_state.text_offset_settings['bottom_left'] = {
                        'x_offset': x_offset,
@@ -1376,13 +1363,13 @@ class UIComponents:
                        "Смещение X (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['bottom_right'].get('x_offset', 0),
-                       key="offset_bottom_right_x"
+                       key=f"{prefix}_bottom_right_x"
                    )
                    y_offset = st.number_input(
                        "Смещение Y (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['bottom_right'].get('y_offset', 0),
-                       key="offset_bottom_right_y"
+                       key=f"{prefix}_bottom_right_y"
                    )
                    st.session_state.text_offset_settings['bottom_right'] = {
                        'x_offset': x_offset,
@@ -1403,14 +1390,14 @@ class UIComponents:
                        "Общее смещение по X (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_left'].get('x_offset', 0),
-                       key="offset_common_x_symmetrical"
+                       key=f"{prefix}_common_x_symmetrical"
                    )
                with col2:
                    common_y_offset = st.number_input(
                        "Общее смещение по Y (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_left'].get('y_offset', 0),
-                       key="offset_common_y_symmetrical"
+                       key=f"{prefix}_common_y_symmetrical"
                    )
                
                st.session_state.text_offset_settings = {
@@ -1424,7 +1411,7 @@ class UIComponents:
            
            col1, col2 = st.columns(2)
            with col1:
-               if st.button("🔄 Сбросить смещения", type="secondary", key="offset_reset_button"):
+               if st.button("🔄 Сбросить смещения", type="secondary", key=f"{prefix}_reset_button"):
                    st.session_state.text_offset_settings = {
                        'top_left': {'x_offset': 0, 'y_offset': 0},
                        'top_right': {'x_offset': 0, 'y_offset': 0},
@@ -1435,7 +1422,7 @@ class UIComponents:
            
            with col2:
                if not symmetrical:
-                   if st.button("📐 Сделать симметричными", type="secondary", key="offset_make_symmetrical_button"):
+                   if st.button("📐 Сделать симметричными", type="secondary", key=f"{prefix}_make_symmetrical_button"):
                        top_left_settings = st.session_state.text_offset_settings['top_left']
                        st.session_state.text_offset_settings = {
                            'top_left': top_left_settings,
@@ -1447,11 +1434,14 @@ class UIComponents:
                        st.rerun()
 
    @staticmethod
-   def render_image_overlay_settings():
-       """Отрисовка настроек наложения изображений"""
+   def render_image_overlay_settings(tab_context=""):
+       """Отрисовка настроек наложения изображений с учетом контекста вкладки"""
        if st.session_state.get('df') is not None and st.session_state.image_overlay_settings.get('enabled', False):
            st.subheader("🖼️ Настройки наложения изображений")
            st.info("Настройте параметры для дополнительных изображений (логотипы, стикеры и т.д.)")
+           
+           # Создаем уникальный префикс для ключей на основе контекста
+           prefix = f"overlay_{tab_context}" if tab_context else "overlay"
            
            template = InfographicTemplates.TEMPLATES[st.session_state.current_template]
            
@@ -1464,7 +1454,7 @@ class UIComponents:
                    "Позиция на изображении",
                    position_options,
                    index=position_options.index(current_position) if current_position in position_options else 0,
-                   key="overlay_position_select"
+                   key=f"{prefix}_position_select"
                )
                st.session_state.image_overlay_settings['position'] = position
            
@@ -1473,7 +1463,7 @@ class UIComponents:
                    "Прозрачность (%)",
                    0, 100,
                    st.session_state.image_overlay_settings.get('opacity', 100),
-                   key="overlay_opacity_slider"
+                   key=f"{prefix}_opacity_slider"
                )
                st.session_state.image_overlay_settings['opacity'] = opacity
            
@@ -1484,7 +1474,7 @@ class UIComponents:
                    "Масштаб (%)",
                    10, 200,
                    st.session_state.image_overlay_settings.get('scale', 100),
-                   key="overlay_scale_slider"
+                   key=f"{prefix}_scale_slider"
                )
                st.session_state.image_overlay_settings['scale'] = scale
            
@@ -1493,7 +1483,7 @@ class UIComponents:
                    "Макс. ширина (% от основного)",
                    5, 100,
                    st.session_state.image_overlay_settings.get('max_width', 50),
-                   key="overlay_max_width_slider"
+                   key=f"{prefix}_max_width_slider"
                )
                st.session_state.image_overlay_settings['max_width'] = max_width
            
@@ -1504,7 +1494,7 @@ class UIComponents:
                    "Смещение по X (%)",
                    -100, 100,
                    st.session_state.image_overlay_settings.get('x_offset', 0),
-                   key="overlay_x_offset_input"
+                   key=f"{prefix}_x_offset_input"
                )
                st.session_state.image_overlay_settings['x_offset'] = x_offset
            
@@ -1513,14 +1503,14 @@ class UIComponents:
                    "Смещение по Y (%)",
                    -100, 100,
                    st.session_state.image_overlay_settings.get('y_offset', 0),
-                   key="overlay_y_offset_input"
+                   key=f"{prefix}_y_offset_input"
                )
                st.session_state.image_overlay_settings['y_offset'] = y_offset
            
            st.caption("💡 Используйте смещения для точной настройки положения изображения")
            
            # Предпросмотр позиции
-           if st.checkbox("Показать предпросмотр позиции", value=False, key="overlay_show_preview_check"):
+           if st.checkbox("Показать предпросмотр позиции", value=False, key=f"{prefix}_show_preview_check"):
                st.info(f"**Позиция:** {position}")
                st.info(f"**Масштаб:** {scale}%, **Прозрачность:** {opacity}%")
                st.info(f"**Смещение:** X={x_offset}%, Y={y_offset}%")
@@ -1534,14 +1524,14 @@ class UIComponents:
        
        st.header("🎯 Предпросмотр и тестирование")
        
-       # Настройки шрифтов
-       UIComponents.render_font_settings()
+       # Настройки шрифтов с контекстом "preview"
+       UIComponents.render_font_settings("preview")
        
-       # Настройки смещения текста
-       UIComponents.render_text_offset_settings()
+       # Настройки смещения текста с контекстом "preview"
+       UIComponents.render_text_offset_settings("preview")
        
-       # Настройки наложения изображений
-       UIComponents.render_image_overlay_settings()
+       # Настройки наложения изображений с контекстом "preview"
+       UIComponents.render_image_overlay_settings("preview")
        
        # Выбор строки для теста
        col1, col2, col3 = st.columns([2, 1, 1])
@@ -2072,14 +2062,14 @@ def main():
                    suffix = st.text_input("Суффикс", value="_promo", key="settings_suffix_input")
                    st.session_state.export_settings['suffix'] = suffix
            
-           # Настройки шрифтов
-           ui.render_font_settings()
+           # Настройки шрифтов с контекстом "settings"
+           ui.render_font_settings("settings")
            
-           # Настройки смещения текста
-           ui.render_text_offset_settings()
+           # Настройки смещения текста с контекстом "settings"
+           ui.render_text_offset_settings("settings")
            
-           # Настройки наложения изображений
-           ui.render_image_overlay_settings()
+           # Настройки наложения изображений с контекстом "settings"
+           ui.render_image_overlay_settings("settings")
            
            if st.button("🔍 Автоподбор колонок", type="secondary", key="settings_auto_map_columns"):
                suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
