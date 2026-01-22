@@ -72,7 +72,7 @@ def init_session_state():
            'timeout': 15,
            'retry_count': 2
        },
-       'text_offset_settings': {  # Новая секция для настроек смещения текста
+       'text_offset_settings': {
            'top_left': {'x_offset': 0, 'y_offset': 0},
            'top_right': {'x_offset': 0, 'y_offset': 0},
            'bottom_left': {'x_offset': 0, 'y_offset': 0},
@@ -489,7 +489,7 @@ class InfographicGenerator:
                img,
                text_data,
                template_id,
-               text_offsets=text_offsets  # Передаем смещения
+               text_offsets=text_offsets
            )
            
            output_dir = st.session_state.output_dir
@@ -555,7 +555,7 @@ class InfographicGenerator:
                    template_id,
                    export_settings,
                    idx,
-                   text_offsets  # Передаем смещения
+                   text_offsets
                )
                futures.append(future)
            
@@ -624,7 +624,8 @@ class UIComponents:
            uploaded_file = st.file_uploader(
                "Выберите Excel файл",
                type=['xlsx', 'xls'],
-               help="Файл должен содержать данные о товарах"
+               help="Файл должен содержать данные о товарах",
+               key="file_uploader_sidebar"
            )
            
            if uploaded_file:
@@ -641,7 +642,11 @@ class UIComponents:
            
            with st.expander("👁️ Предпросмотр данных", expanded=False):
                if st.session_state.df is not None:
-                   preview_rows = st.slider("Строк для предпросмотра", 5, 50, 10)
+                   preview_rows = st.slider(
+                       "Строк для предпросмотра", 
+                       5, 50, 10,
+                       key="preview_rows_slider"
+                   )
                    st.dataframe(st.session_state.df.head(preview_rows))
            
            st.subheader("🎨 Шаблон инфографики")
@@ -651,7 +656,8 @@ class UIComponents:
                options=template_options,
                format_func=lambda x: f"{InfographicTemplates.TEMPLATES[x]['name']} - "
                                    f"{InfographicTemplates.TEMPLATES[x]['description']}",
-               index=template_options.index(st.session_state.current_template)
+               index=template_options.index(st.session_state.current_template),
+               key="template_selectbox"
            )
            st.session_state.current_template = selected_template
            
@@ -667,27 +673,32 @@ class UIComponents:
                    ["PNG", "JPEG", "WebP"],
                    index=["PNG", "JPEG", "WebP"].index(
                        st.session_state.export_settings['format']
-                   )
+                   ),
+                   key="export_format_selectbox"
                )
                st.session_state.export_settings['format'] = export_format
            with col2:
                quality = st.slider(
                    "Качество",
                    50, 100,
-                   st.session_state.export_settings['quality']
+                   st.session_state.export_settings['quality'],
+                   key="quality_slider"
                )
                st.session_state.export_settings['quality'] = quality
            
-           st.session_state.export_settings['resize'] = st.checkbox(
+           resize_checkbox = st.checkbox(
                "Изменять размер",
-               st.session_state.export_settings['resize']
+               st.session_state.export_settings['resize'],
+               key="resize_checkbox"
            )
+           st.session_state.export_settings['resize'] = resize_checkbox
            
            if st.session_state.export_settings['resize']:
                target_size = st.number_input(
                    "Целевой размер (px)",
                    500, 4000,
-                   st.session_state.export_settings['target_size']
+                   st.session_state.export_settings['target_size'],
+                   key="target_size_number"
                )
                st.session_state.export_settings['target_size'] = target_size
            
@@ -697,28 +708,34 @@ class UIComponents:
                batch_size = st.number_input(
                    "Размер партии",
                    1, 10000,
-                   st.session_state.processing_settings['batch_size']
+                   st.session_state.processing_settings['batch_size'],
+                   key="batch_size_number"
                )
                st.session_state.processing_settings['batch_size'] = batch_size
            with col2:
                max_workers = st.number_input(
                    "Максимум потоков",
                    1, 32,
-                   st.session_state.processing_settings['max_workers']
+                   st.session_state.processing_settings['max_workers'],
+                   key="max_workers_number"
                )
                st.session_state.processing_settings['max_workers'] = max_workers
            
-           st.session_state.processing_settings['timeout'] = st.number_input(
+           timeout_input = st.number_input(
                "Таймаут (сек)",
                5, 60,
-               st.session_state.processing_settings['timeout']
+               st.session_state.processing_settings['timeout'],
+               key="timeout_number"
            )
+           st.session_state.processing_settings['timeout'] = timeout_input
            
-           st.session_state.processing_settings['retry_count'] = st.number_input(
+           retry_count = st.number_input(
                "Повторные попытки",
                0, 5,
-               st.session_state.processing_settings['retry_count']
+               st.session_state.processing_settings['retry_count'],
+               key="retry_count_number"
            )
+           st.session_state.processing_settings['retry_count'] = retry_count
            
            st.divider()
            st.caption(f"Обработано: {st.session_state.processed_count} изображений")
@@ -740,21 +757,24 @@ class UIComponents:
                    available_columns,
                    index=available_columns.index(
                        st.session_state.column_mapping.get('top_left', available_columns[0])
-                   ) if st.session_state.column_mapping.get('top_left') in available_columns else 0
+                   ) if st.session_state.column_mapping.get('top_left') in available_columns else 0,
+                   key="top_left_selectbox"
                )
                st.session_state.column_mapping['top_right'] = st.selectbox(
                    "Верхний правый угол (Цена)",
                    available_columns,
                    index=available_columns.index(
                        st.session_state.column_mapping.get('top_right', available_columns[1])
-                   ) if st.session_state.column_mapping.get('top_right') in available_columns and len(available_columns) > 1 else min(1, len(available_columns)-1)
+                   ) if st.session_state.column_mapping.get('top_right') in available_columns and len(available_columns) > 1 else min(1, len(available_columns)-1),
+                   key="top_right_selectbox"
                )
                st.session_state.column_mapping['image_url'] = st.selectbox(
                    "URL изображений",
                    available_columns,
                    index=available_columns.index(
                        st.session_state.column_mapping.get('image_url', available_columns[2])
-                   ) if st.session_state.column_mapping.get('image_url') in available_columns and len(available_columns) > 2 else min(2, len(available_columns)-1)
+                   ) if st.session_state.column_mapping.get('image_url') in available_columns and len(available_columns) > 2 else min(2, len(available_columns)-1),
+                   key="image_url_selectbox"
                )
            
            with col2:
@@ -763,21 +783,24 @@ class UIComponents:
                    available_columns,
                    index=available_columns.index(
                        st.session_state.column_mapping.get('bottom_left', available_columns[3])
-                   ) if st.session_state.column_mapping.get('bottom_left') in available_columns and len(available_columns) > 3 else min(3, len(available_columns)-1)
+                   ) if st.session_state.column_mapping.get('bottom_left') in available_columns and len(available_columns) > 3 else min(3, len(available_columns)-1),
+                   key="bottom_left_selectbox"
                )
                st.session_state.column_mapping['bottom_right'] = st.selectbox(
                    "Нижний правый угол (Скидка/Детали)",
                    available_columns,
                    index=available_columns.index(
                        st.session_state.column_mapping.get('bottom_right', available_columns[4])
-                   ) if st.session_state.column_mapping.get('bottom_right') in available_columns and len(available_columns) > 4 else min(4, len(available_columns)-1)
+                   ) if st.session_state.column_mapping.get('bottom_right') in available_columns and len(available_columns) > 4 else min(4, len(available_columns)-1),
+                   key="bottom_right_selectbox"
                )
                st.session_state.column_mapping['filename'] = st.selectbox(
                    "Имена файлов (источник)",
                    available_columns,
                    index=available_columns.index(
                        st.session_state.column_mapping.get('filename', available_columns[0])
-                   ) if st.session_state.column_mapping.get('filename') in available_columns else 0
+                   ) if st.session_state.column_mapping.get('filename') in available_columns else 0,
+                   key="filename_selectbox"
                )
    
    @staticmethod
@@ -797,13 +820,13 @@ class UIComponents:
                    "Смещение X (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['top_left']['x_offset'],
-                   key="top_left_x"
+                   key="text_offset_top_left_x"
                )
                y_offset = st.number_input(
                    "Смещение Y (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['top_left']['y_offset'],
-                   key="top_left_y"
+                   key="text_offset_top_left_y"
                )
                st.session_state.text_offset_settings['top_left'] = {
                    'x_offset': x_offset,
@@ -817,13 +840,13 @@ class UIComponents:
                    "Смещение X (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['top_right']['x_offset'],
-                   key="top_right_x"
+                   key="text_offset_top_right_x"
                )
                y_offset = st.number_input(
                    "Смещение Y (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['top_right']['y_offset'],
-                   key="top_right_y"
+                   key="text_offset_top_right_y"
                )
                st.session_state.text_offset_settings['top_right'] = {
                    'x_offset': x_offset,
@@ -837,13 +860,13 @@ class UIComponents:
                    "Смещение X (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['bottom_left']['x_offset'],
-                   key="bottom_left_x"
+                   key="text_offset_bottom_left_x"
                )
                y_offset = st.number_input(
                    "Смещение Y (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['bottom_left']['y_offset'],
-                   key="bottom_left_y"
+                   key="text_offset_bottom_left_y"
                )
                st.session_state.text_offset_settings['bottom_left'] = {
                    'x_offset': x_offset,
@@ -857,13 +880,13 @@ class UIComponents:
                    "Смещение X (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['bottom_right']['x_offset'],
-                   key="bottom_right_x"
+                   key="text_offset_bottom_right_x"
                )
                y_offset = st.number_input(
                    "Смещение Y (%)",
                    -100, 100,
                    st.session_state.text_offset_settings['bottom_right']['y_offset'],
-                   key="bottom_right_y"
+                   key="text_offset_bottom_right_y"
                )
                st.session_state.text_offset_settings['bottom_right'] = {
                    'x_offset': x_offset,
@@ -874,7 +897,7 @@ class UIComponents:
            st.caption("💡 Положительные значения смещают текст вправо/вниз, отрицательные - влево/вверх")
            
            # Кнопка сброса настроек
-           if st.button("🔄 Сбросить смещения", type="secondary"):
+           if st.button("🔄 Сбросить смещения", type="secondary", key="reset_offsets_button"):
                st.session_state.text_offset_settings = {
                    'top_left': {'x_offset': 0, 'y_offset': 0},
                    'top_right': {'x_offset': 0, 'y_offset': 0},
@@ -902,18 +925,20 @@ class UIComponents:
                "Номер строки для тестирования",
                min_value=0,
                max_value=len(st.session_state.df)-1,
-               value=0
+               value=0,
+               key="test_row_idx_number"
            )
        with col2:
            timeout = st.number_input(
                "Таймаут (сек)",
                5, 60,
-               st.session_state.export_settings.get('timeout', 15)
+               st.session_state.export_settings.get('timeout', 15),
+               key="preview_timeout_number"
            )
        with col3:
            st.write("")
            st.write("")
-           test_button = st.button("🚀 Запустить тест", type="primary")
+           test_button = st.button("🚀 Запустить тест", type="primary", key="preview_test_button")
        
        if test_button and test_row_idx < len(st.session_state.df):
            with st.spinner("Выполнение теста..."):
@@ -931,9 +956,9 @@ class UIComponents:
                with st.expander("📋 Исходные данные строки"):
                    col1, col2 = st.columns(2)
                    with col1:
-                       st.json(text_data)
+                       st.json(text_data, key="text_data_json")
                    with col2:
-                       st.code(f"URL: {image_url}")
+                       st.code(f"URL: {image_url}", key="url_code")
                
                if image_url and image_url.startswith(('http://', 'https://')):
                    img = generator.image_processor.load_image_from_url(image_url, timeout)
@@ -947,7 +972,7 @@ class UIComponents:
                            img.copy(),
                            text_data,
                            st.session_state.current_template,
-                           text_offsets=st.session_state.text_offset_settings  # Передаем смещения
+                           text_offsets=st.session_state.text_offset_settings
                        )
                        
                        col1, col2 = st.columns(2)
@@ -961,7 +986,8 @@ class UIComponents:
                            st.caption(f"Шаблон: {st.session_state.current_template}")
                            
                            # Показываем сетку для визуализации позиций
-                           if st.checkbox("Показать сетку позиций", value=False):
+                           show_grid = st.checkbox("Показать сетку позиций", value=False, key="show_grid_checkbox")
+                           if show_grid:
                                grid_img = img.copy()
                                draw = ImageDraw.Draw(grid_img)
                                template = InfographicTemplates.TEMPLATES[st.session_state.current_template]
@@ -1020,7 +1046,8 @@ class UIComponents:
                            label="💾 Скачать тестовое изображение",
                            data=buffered.getvalue(),
                            file_name=f"test_preview.{format_ext}",
-                           mime=mime_type
+                           mime=mime_type,
+                           key="test_download_button"
                        )
                        
                        st.session_state.preview_image = processed_img
@@ -1048,18 +1075,25 @@ class UIComponents:
        with col1:
            start_idx = st.number_input(
                "Начать с строки",
-               0, total_rows-1, 0
+               0, total_rows-1, 0,
+               key="start_idx_number"
            )
        with col2:
            end_idx = st.number_input(
                "Закончить на строке",
                start_idx, total_rows-1,
-               min(start_idx + st.session_state.processing_settings['batch_size'] - 1, total_rows-1)
+               min(start_idx + st.session_state.processing_settings['batch_size'] - 1, total_rows-1),
+               key="end_idx_number"
            )
        with col3:
            st.write("")
            st.write("")
-           process_button = st.button("🔄 Начать обработку", type="primary", use_container_width=True)
+           process_button = st.button(
+               "🔄 Начать обработку", 
+               type="primary", 
+               use_container_width=True,
+               key="process_button"
+           )
        
        batch_size = end_idx - start_idx + 1
        if batch_size > 0:
@@ -1074,7 +1108,7 @@ class UIComponents:
                'end_time': None
            }
            
-           progress_bar = st.progress(0)
+           progress_bar = st.progress(0, key="progress_bar")
            status_text = st.empty()
            results_placeholder = st.empty()
            
@@ -1094,7 +1128,7 @@ class UIComponents:
                        'timeout': st.session_state.processing_settings['timeout']
                    },
                    st.session_state.processing_settings,
-                   text_offsets=st.session_state.text_offset_settings  # Передаем смещения
+                   text_offsets=st.session_state.text_offset_settings
                )
            
            success_count = sum(1 for r in results if r['status'] == 'success')
@@ -1114,16 +1148,16 @@ class UIComponents:
                
                col1, col2, col3 = st.columns(3)
                with col1:
-                   st.metric("Успешно", success_count)
+                   st.metric("Успешно", success_count, key="success_metric")
                with col2:
-                   st.metric("С ошибками", failed_count)
+                   st.metric("С ошибками", failed_count, key="failed_metric")
                with col3:
                    if st.session_state.processing_stats['start_time'] and st.session_state.processing_stats['end_time']:
                        duration = (
                            st.session_state.processing_stats['end_time'] -
                            st.session_state.processing_stats['start_time']
                        ).total_seconds()
-                       st.metric("Время", f"{duration:.1f} сек")
+                       st.metric("Время", f"{duration:.1f} сек", key="time_metric")
                
                if failed_count > 0:
                    with st.expander("📋 Детали ошибок"):
@@ -1144,7 +1178,8 @@ class UIComponents:
                                        data=f.read(),
                                        file_name=os.path.basename(zip_path),
                                        mime="application/zip",
-                                       use_container_width=True
+                                       use_container_width=True,
+                                       key="zip_download_button"
                                    )
                            with col2:
                                with open(csv_path, 'rb') as f:
@@ -1153,7 +1188,8 @@ class UIComponents:
                                        data=f.read(),
                                        file_name=os.path.basename(csv_path),
                                        mime="text/csv",
-                                       use_container_width=True
+                                       use_container_width=True,
+                                       key="csv_download_button"
                                    )
                            
                            zip_size = os.path.getsize(zip_path) / (1024 * 1024)
@@ -1170,22 +1206,24 @@ class UIComponents:
        
        col1, col2, col3, col4 = st.columns(4)
        with col1:
-           st.metric("Всего обработано", st.session_state.processed_count)
+           st.metric("Всего обработано", st.session_state.processed_count, key="total_processed_metric")
        with col2:
            if st.session_state.batch_results:
                success_rate = (
                    sum(1 for r in st.session_state.batch_results if r['status'] == 'success') /
                    len(st.session_state.batch_results) * 100
                )
-               st.metric("Успешность", f"{success_rate:.1f}%")
+               st.metric("Успешность", f"{success_rate:.1f}%", key="success_rate_metric")
        with col3:
            st.metric("Текущий шаблон",
-                    InfographicTemplates.TEMPLATES[st.session_state.current_template]['name'])
+                    InfographicTemplates.TEMPLATES[st.session_state.current_template]['name'],
+                    key="template_metric")
        with col4:
-           st.metric("Формат экспорта", st.session_state.export_settings['format'])
+           st.metric("Формат экспорта", st.session_state.export_settings['format'], key="format_metric")
        
        # Показываем текущие настройки смещения
-       if st.checkbox("Показать настройки смещения текста"):
+       show_offset_settings = st.checkbox("Показать настройки смещения текста", value=False, key="show_offset_settings_checkbox")
+       if show_offset_settings:
            st.subheader("🎯 Текущие настройки смещения")
            offset_df = pd.DataFrame(st.session_state.text_offset_settings).T
            st.dataframe(offset_df)
@@ -1198,9 +1236,9 @@ class UIComponents:
                status_counts = results_df['status'].value_counts()
                col1, col2 = st.columns(2)
                with col1:
-                   st.bar_chart(status_counts)
+                   st.bar_chart(status_counts, key="status_chart")
                with col2:
-                   st.dataframe(status_counts)
+                   st.dataframe(status_counts, key="status_dataframe")
            
            if (st.session_state.processing_stats['start_time'] and
                st.session_state.processing_stats['end_time']):
@@ -1211,7 +1249,7 @@ class UIComponents:
                
                if duration > 0 and len(results_df) > 0:
                    speed = len(results_df) / duration
-                   st.metric("Скорость обработки", f"{speed:.2f} изобр/сек")
+                   st.metric("Скорость обработки", f"{speed:.2f} изобр/сек", key="speed_metric")
 
    @staticmethod
    def render_instructions_tab():
@@ -1246,7 +1284,7 @@ class UIComponents:
                """
            )
        
-       with st.expander("📊 Подготовка Excel файла", expanded=True):
+       with st.expander("📊 Подготовка Excel файла", expanded=False):
            st.markdown(
                """
                ### Требования к Excel файлу:
@@ -1270,7 +1308,7 @@ class UIComponents:
                """
            )
        
-       with st.expander("⚙️ Настройка маппинга колонок"):
+       with st.expander("⚙️ Настройка маппинга колонок", expanded=False):
            st.markdown(
                """
                ### Что такое маппинг колонок?
@@ -1289,7 +1327,7 @@ class UIComponents:
                """
            )
        
-       with st.expander("🎨 Выбор шаблона"):
+       with st.expander("🎨 Выбор шаблона", expanded=False):
            st.markdown(
                """
                ### Доступные шаблоны:
@@ -1321,7 +1359,6 @@ class UIComponents:
 # ============================
 def main():
    """Основная функция приложения"""
-   # Инициализация image_cache в основном потоке
    if 'image_cache' not in st.session_state:
        st.session_state['image_cache'] = {}
 
@@ -1353,20 +1390,20 @@ def main():
            st.subheader("🏷️ Настройка имен файлов")
            col1, col2 = st.columns(2)
            with col1:
-               add_prefix = st.checkbox("Добавить префикс", value=False)
+               add_prefix = st.checkbox("Добавить префикс", value=False, key="add_prefix_checkbox")
                if add_prefix:
-                   prefix = st.text_input("Префикс", value="product_")
+                   prefix = st.text_input("Префикс", value="product_", key="prefix_text")
                    st.session_state.export_settings['prefix'] = prefix
            with col2:
-               add_suffix = st.checkbox("Добавить суффикс", value=False)
+               add_suffix = st.checkbox("Добавить суффикс", value=False, key="add_suffix_checkbox")
                if add_suffix:
-                   suffix = st.text_input("Суффикс", value="_promo")
+                   suffix = st.text_input("Суффикс", value="_promo", key="suffix_text")
                    st.session_state.export_settings['suffix'] = suffix
            
            # Показываем настройки смещения текста в первой вкладке
            ui.render_text_offset_settings()
            
-           if st.button("🔍 Автоподбор колонок", type="secondary"):
+           if st.button("🔍 Автоподбор колонок", type="secondary", key="auto_map_button"):
                suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
                st.session_state.column_mapping = suggestions
                st.success("✅ Колонки автоматически подобраны!")
@@ -1451,7 +1488,8 @@ def main():
                label="📥 Скачать шаблон Excel файла",
                data=buffer.getvalue(),
                file_name="шаблон_товары.xlsx",
-               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+               key="template_download_button"
            )
        
        # Футер
