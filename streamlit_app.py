@@ -77,6 +77,7 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
+# Инициализация в начале запуска приложения
 init_session_state()
 
 # ============================
@@ -218,17 +219,16 @@ class ImageProcessor:
                     headers={'User-Agent': 'Mozilla/5.0'}
                 )
                 response.raise_for_status()
-                
                 img = Image.open(BytesIO(response.content))
                 if img.mode != 'RGBA':
                     img = img.convert('RGBA')
-                
-                # Кэшируем изображение
+                # Проверка и инициализация кэша, если его нет
+                if 'image_cache' not in st.session_state:
+                    st.session_state['image_cache'] = {}
+                cache = st.session_state['image_cache']
                 cache_key = hashlib.md5(url.encode()).hexdigest()
-                st.session_state.image_cache[cache_key] = img.copy()
-                
+                cache[cache_key] = img.copy()
                 return img
-                
             except Exception as e:
                 if attempt == retries:
                     logger.error(f"Не удалось загрузить изображение {url}: {e}")
@@ -1121,6 +1121,11 @@ class UIComponents:
 # ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
 # ============================
 def main():
+    """Основная функция приложения"""
+    # Инициализация image_cache в основном потоке
+    if 'image_cache' not in st.session_state:
+        st.session_state['image_cache'] = {}
+
     """Основная функция приложения"""
     st.title("🎯 Генератор Инфографики v3.0")
     st.markdown("### Автоматическое создание инфографики из Excel файлов")
