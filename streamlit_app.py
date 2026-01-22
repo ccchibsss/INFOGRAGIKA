@@ -1,21 +1,19 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 import requests
 from io import BytesIO
 import time
 import os
-import base64
+import hashlib
 from datetime import datetime
 import zipfile
 import json
-import logging
 import sys
 import re
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import hashlib
+import logging
 
 # ============================
 # НАСТРОЙКА ПРИЛОЖЕНИЯ
@@ -64,7 +62,9 @@ def init_session_state():
             'format': 'PNG',
             'quality': 85,
             'resize': True,
-            'target_size': 1200
+            'target_size': 1200,
+            'prefix': '',
+            'suffix': ''
         },
         'processing_settings': {
             'batch_size': 100,
@@ -219,17 +219,13 @@ class ImageProcessor:
                     headers={'User-Agent': 'Mozilla/5.0'}
                 )
                 response.raise_for_status()
-                
                 img = Image.open(BytesIO(response.content))
                 if img.mode != 'RGBA':
                     img = img.convert('RGBA')
-                
                 # Кэшируем изображение
                 cache_key = hashlib.md5(url.encode()).hexdigest()
                 st.session_state.image_cache[cache_key] = img.copy()
-                
                 return img
-                
             except Exception as e:
                 if attempt == retries:
                     logger.error(f"Не удалось загрузить изображение {url}: {e}")
@@ -254,35 +250,23 @@ class ImageProcessor:
         template = InfographicTemplates.TEMPLATES[template_id]
         draw = ImageDraw.Draw(img)
         
-        # Пытаемся загрузить шрифт, иначе используем стандартный
-        try:
-            # Для Windows
-            font_paths = [
-                "C:/Windows/Fonts/arial.ttf",
-                "C:/Windows/Fonts/arialbd.ttf",
-                "/System/Library/Fonts/Helvetica.ttc",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-            ]
-            
-            regular_font = None
-            bold_font = None
-            
-            for path in font_paths:
-                if os.path.exists(path):
-                    try:
-                        regular_font = ImageFont.truetype(path, 24)
-                        bold_font = ImageFont.truetype(path, 24)
-                        break
-                    except:
-                        continue
-            
-            if regular_font is None:
-                regular_font = ImageFont.load_default()
-                bold_font = ImageFont.load_default()
-                
-        except:
+        # Пытаемся загрузить шрифт
+        font_paths = [
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/arialbd.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        ]
+        regular_font = None
+        for path in font_paths:
+            if os.path.exists(path):
+                try:
+                    regular_font = ImageFont.truetype(path, 24)
+                    break
+                except:
+                    continue
+        if regular_font is None:
             regular_font = ImageFont.load_default()
-            bold_font = ImageFont.load_default()
         
         # Обработка каждого текстового элемента
         for position_key, position_data in template["text_positions"].items():
@@ -290,31 +274,28 @@ class ImageProcessor:
                 text = str(text_data[position_key])
                 if not text.strip():
                     continue
-                
-                # Определяем координаты
+                # Координаты
                 x = int(position_data["x"] * img.width)
                 y = int(position_data["y"] * img.height)
-                
-                # Выбираем шрифт
                 font_size = template["font_sizes"][position_key]
-                try:
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                except:
-                    # Масштабируем стандартный шрифт
+                # Загружаем шрифт
+                font = None
+                for path in font_paths:
+                    if os.path.exists(path):
+                        try:
+                            font = ImageFont.truetype(path, font_size)
+                            break
+                        except:
+                            continue
+                if font is None:
                     font = ImageFont.load_default()
-                    # Грубая эмуляция размера
-                    font = ImageFont.load_default(size=font_size)
-                
-                # Добавляем тень
+                # Тень
                 if template["effects"]["shadow"]:
                     shadow_color = template["colors"]["shadow"]
                     draw.text((x+2, y+2), text, font=font, fill=shadow_color)
-                
-                # Добавляем основной текст
+                # Основной текст
                 text_color = template["colors"]["text"]
-                draw.text((x, y), text, font=font, fill=text_color, 
-                         align=position_data["align"])
-        
+                draw.text((x, y), text, font=font, fill=text_color)
         return img
     
     @staticmethod
@@ -322,15 +303,13 @@ class ImageProcessor:
         """Сохранение изображения в файл"""
         try:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
             if format.upper() == 'JPEG':
                 img = img.convert('RGB')
                 img.save(filepath, 'JPEG', quality=quality, optimize=True)
             elif format.upper() == 'WEBP':
                 img.save(filepath, 'WEBP', quality=quality)
-            else:  # PNG по умолчанию
+            else:
                 img.save(filepath, 'PNG', optimize=True)
-            
             return True
         except Exception as e:
             logger.error(f"Ошибка сохранения {filepath}: {e}")
@@ -346,7 +325,6 @@ class ExcelProcessor:
         """Чтение Excel файла с автоматическим определением формата"""
         try:
             file_extension = uploaded_file.name.split('.')[-1].lower()
-            
             if file_extension == 'xlsx':
                 df = pd.read_excel(uploaded_file, engine='openpyxl')
             elif file_extension == 'xls':
@@ -354,15 +332,12 @@ class ExcelProcessor:
             else:
                 st.error(f"❌ Неподдерживаемый формат файла: {file_extension}")
                 return None
-            
             # Очистка данных
             df = df.replace({np.nan: None, '': None})
-            
             # Логирование структуры данных
             logger.info(f"Загружен файл: {uploaded_file.name}")
             logger.info(f"Колонки: {df.columns.tolist()}")
             logger.info(f"Строк: {len(df)}")
-            
             return df
         except Exception as e:
             st.error(f"❌ Ошибка чтения файла: {str(e)}")
@@ -402,13 +377,16 @@ class ExcelProcessor:
         }
         for position, keywords in keyword_mapping.items():
             for keyword in keywords:
-                if any(keyword in col for col in column_names):
-                    for original_col in df.columns:
-                        if keyword in str(original_col).lower():
-                            suggestions[position] = original_col
+                for col in column_names:
+                    if keyword in col:
+                        for original_col in df.columns:
+                            if keyword in str(original_col).lower():
+                                suggestions[position] = original_col
+                                break
+                        if suggestions[position]:
                             break
-                    if suggestions[position]:
-                        break
+                if suggestions[position]:
+                    break
         return suggestions
 
 # ============================
@@ -614,14 +592,15 @@ class UIComponents:
             # Выбор шаблона
             st.subheader("🎨 Шаблон инфографики")
             template_options = InfographicTemplates.get_template_names()
+            current_template = st.session_state.get('current_template', 'standard')
             selected_template = st.selectbox(
                 "Выберите шаблон",
                 options=template_options,
                 format_func=lambda x: f"{InfographicTemplates.TEMPLATES[x]['name']} - "
                                     f"{InfographicTemplates.TEMPLATES[x]['description']}",
-                index=template_options.index(st.session_state.current_template)
+                index=template_options.index(current_template) if current_template in template_options else 0
             )
-            st.session_state.current_template = selected_template
+            st.session_state['current_template'] = selected_template
             # Превью шаблона
             template = InfographicTemplates.TEMPLATES[selected_template]
             st.caption(f"**Тип:** {template['name']}")
@@ -633,29 +612,27 @@ class UIComponents:
                 export_format = st.selectbox(
                     "Формат",
                     ["PNG", "JPEG", "WebP"],
-                    index=["PNG", "JPEG", "WebP"].index(
-                        st.session_state.export_settings['format']
-                    )
+                    index=["PNG", "JPEG", "WebP"].index(st.session_state['export_settings'].get('format', 'PNG'))
                 )
-                st.session_state.export_settings['format'] = export_format
+                st.session_state['export_settings']['format'] = export_format
             with col2:
                 quality = st.slider(
                     "Качество",
                     50, 100, 
-                    st.session_state.export_settings['quality']
+                    st.session_state['export_settings'].get('quality', 85)
                 )
-                st.session_state.export_settings['quality'] = quality
-            st.session_state.export_settings['resize'] = st.checkbox(
+                st.session_state['export_settings']['quality'] = quality
+            st.session_state['export_settings']['resize'] = st.checkbox(
                 "Изменять размер", 
-                st.session_state.export_settings['resize']
+                value=st.session_state['export_settings'].get('resize', True)
             )
-            if st.session_state.export_settings['resize']:
+            if st.session_state['export_settings']['resize']:
                 target_size = st.number_input(
                     "Целевой размер (px)",
                     500, 4000,
-                    st.session_state.export_settings['target_size']
+                    value=st.session_state['export_settings'].get('target_size', 1200)
                 )
-                st.session_state.export_settings['target_size'] = target_size
+                st.session_state['export_settings']['target_size'] = target_size
             # Настройки обработки
             st.subheader("⚡ Настройки обработки")
             col1, col2 = st.columns(2)
@@ -663,30 +640,30 @@ class UIComponents:
                 batch_size = st.number_input(
                     "Размер партии",
                     1, 10000,
-                    st.session_state.processing_settings['batch_size']
+                    value=st.session_state['processing_settings'].get('batch_size', 100)
                 )
-                st.session_state.processing_settings['batch_size'] = batch_size
+                st.session_state['processing_settings']['batch_size'] = batch_size
             with col2:
                 max_workers = st.number_input(
                     "Максимум потоков",
                     1, 32,
-                    st.session_state.processing_settings['max_workers']
+                    value=st.session_state['processing_settings'].get('max_workers', 8)
                 )
-                st.session_state.processing_settings['max_workers'] = max_workers
-            st.session_state.processing_settings['timeout'] = st.number_input(
+                st.session_state['processing_settings']['max_workers'] = max_workers
+            st.session_state['processing_settings']['timeout'] = st.number_input(
                 "Таймаут (сек)",
                 5, 60,
-                st.session_state.processing_settings['timeout']
+                value=st.session_state['processing_settings'].get('timeout', 15)
             )
-            st.session_state.processing_settings['retry_count'] = st.number_input(
+            st.session_state['processing_settings']['retry_count'] = st.number_input(
                 "Повторные попытки",
                 0, 5,
-                st.session_state.processing_settings['retry_count']
+                value=st.session_state['processing_settings'].get('retry_count', 2)
             )
             # Информация о системе
             st.divider()
-            st.caption(f"Обработано: {st.session_state.processed_count} изображений")
-            st.caption(f"Версия: 3.0 (Excel)")
+            st.caption(f"Обработано: {st.session_state['processed_count']} изображений")
+            st.caption("Версия: 3.0 (Excel)")
 
     @staticmethod
     def render_column_mapping():
@@ -695,51 +672,46 @@ class UIComponents:
             st.subheader("📊 Настройка маппинга колонок")
             st.info("Выберите, какие колонки из файла соответствуют элементам инфографики")
             available_columns = st.session_state.df.columns.tolist()
+
+            def get_index_for_value(list_, value):
+                try:
+                    return list_.index(value)
+                except:
+                    return 0
+
             # Создаем колонки для выбора
             col1, col2 = st.columns(2)
             with col1:
-                st.session_state.column_mapping['top_left'] = st.selectbox(
+                st.session_state['column_mapping']['top_left'] = st.selectbox(
                     "Верхний левый угол (Название)",
                     available_columns,
-                    index=available_columns.index(
-                        st.session_state.column_mapping.get('top_left', available_columns[0])
-                    ) if st.session_state.column_mapping.get('top_left') in available_columns else 0
+                    index=get_index_for_value(available_columns, st.session_state['column_mapping'].get('top_left'))
                 )
-                st.session_state.column_mapping['top_right'] = st.selectbox(
+                st.session_state['column_mapping']['top_right'] = st.selectbox(
                     "Верхний правый угол (Цена)",
                     available_columns,
-                    index=available_columns.index(
-                        st.session_state.column_mapping.get('top_right', available_columns[1])
-                    ) if st.session_state.column_mapping.get('top_right') in available_columns and len(available_columns) > 1 else min(1, len(available_columns)-1)
+                    index=get_index_for_value(available_columns, st.session_state['column_mapping'].get('top_right'))
                 )
-                st.session_state.column_mapping['image_url'] = st.selectbox(
+                st.session_state['column_mapping']['image_url'] = st.selectbox(
                     "URL изображений",
                     available_columns,
-                    index=available_columns.index(
-                        st.session_state.column_mapping.get('image_url', available_columns[2])
-                    ) if st.session_state.column_mapping.get('image_url') in available_columns and len(available_columns) > 2 else min(2, len(available_columns)-1)
+                    index=get_index_for_value(available_columns, st.session_state['column_mapping'].get('image_url'))
                 )
             with col2:
-                st.session_state.column_mapping['bottom_left'] = st.selectbox(
+                st.session_state['column_mapping']['bottom_left'] = st.selectbox(
                     "Нижний левый угол (Характеристики)",
                     available_columns,
-                    index=available_columns.index(
-                        st.session_state.column_mapping.get('bottom_left', available_columns[3])
-                    ) if st.session_state.column_mapping.get('bottom_left') in available_columns and len(available_columns) > 3 else min(3, len(available_columns)-1)
+                    index=get_index_for_value(available_columns, st.session_state['column_mapping'].get('bottom_left'))
                 )
-                st.session_state.column_mapping['bottom_right'] = st.selectbox(
+                st.session_state['column_mapping']['bottom_right'] = st.selectbox(
                     "Нижний правый угол (Скидка/Детали)",
                     available_columns,
-                    index=available_columns.index(
-                        st.session_state.column_mapping.get('bottom_right', available_columns[4])
-                    ) if st.session_state.column_mapping.get('bottom_right') in available_columns and len(available_columns) > 4 else min(4, len(available_columns)-1)
+                    index=get_index_for_value(available_columns, st.session_state['column_mapping'].get('bottom_right'))
                 )
-                st.session_state.column_mapping['filename'] = st.selectbox(
+                st.session_state['column_mapping']['filename'] = st.selectbox(
                     "Имена файлов (источник)",
                     available_columns,
-                    index=available_columns.index(
-                        st.session_state.column_mapping.get('filename', available_columns[0])
-                    ) if st.session_state.column_mapping.get('filename') in available_columns else 0
+                    index=get_index_for_value(available_columns, st.session_state['column_mapping'].get('filename'))
                 )
 
     @staticmethod
@@ -762,23 +734,23 @@ class UIComponents:
             timeout = st.number_input(
                 "Таймаут (сек)",
                 5, 60,
-                st.session_state.export_settings.get('timeout', 15)
+                value=st.session_state['export_settings'].get('timeout', 15)
             )
         with col3:
             st.write("")  # Пустое место для выравнивания
             st.write("")
-            test_button = st.button("🚀 Запустить тест", type="primary")
+            test_button = st.button("🚀 Запустить тест")
         if test_button and test_row_idx < len(st.session_state.df):
             with st.spinner("Выполнение теста..."):
                 row = st.session_state.df.iloc[test_row_idx]
                 # Формируем текстовые данные
                 text_data = {
-                    'top_left': str(row.get(st.session_state.column_mapping.get('top_left', ''), '')),
-                    'top_right': str(row.get(st.session_state.column_mapping.get('top_right', ''), '')),
-                    'bottom_left': str(row.get(st.session_state.column_mapping.get('bottom_left', ''), '')),
-                    'bottom_right': str(row.get(st.session_state.column_mapping.get('bottom_right', ''), ''))
+                    'top_left': str(row.get(st.session_state['column_mapping'].get('top_left', ''), '')),
+                    'top_right': str(row.get(st.session_state['column_mapping'].get('top_right', ''), '')),
+                    'bottom_left': str(row.get(st.session_state['column_mapping'].get('bottom_left', ''), '')),
+                    'bottom_right': str(row.get(st.session_state['column_mapping'].get('bottom_right', ''), ''))
                 }
-                image_url = str(row.get(st.session_state.column_mapping.get('image_url', ''), ''))
+                image_url = str(row.get(st.session_state['column_mapping'].get('image_url', ''), ''))
                 # Показываем исходные данные
                 with st.expander("📋 Исходные данные строки"):
                     col1, col2 = st.columns(2)
@@ -794,7 +766,7 @@ class UIComponents:
                         processed_img = generator.image_processor.add_text_to_image(
                             img.copy(),
                             text_data,
-                            st.session_state.current_template
+                            st.session_state['current_template']
                         )
                         # Показываем результат
                         col1, col2 = st.columns(2)
@@ -805,22 +777,22 @@ class UIComponents:
                         with col2:
                             st.subheader("🎨 С инфографикой")
                             st.image(processed_img, use_column_width=True)
-                            st.caption(f"Шаблон: {st.session_state.current_template}")
+                            st.caption(f"Шаблон: {st.session_state['current_template']}")
                         # Кнопка скачивания тестового файла
                         buffered = BytesIO()
-                        format_ext = st.session_state.export_settings['format'].lower()
-                        if st.session_state.export_settings['format'] == 'JPEG':
+                        format_ext = st.session_state['export_settings']['format'].lower()
+                        if st.session_state['export_settings']['format'] == 'JPEG':
                             processed_img.convert('RGB').save(
                                 buffered, 
                                 format='JPEG',
-                                quality=st.session_state.export_settings['quality']
+                                quality=st.session_state['export_settings']['quality']
                             )
                             mime_type = 'image/jpeg'
-                        elif st.session_state.export_settings['format'] == 'WEBP':
+                        elif st.session_state['export_settings']['format'] == 'WEBP':
                             processed_img.save(
                                 buffered,
                                 format='WEBP',
-                                quality=st.session_state.export_settings['quality']
+                                quality=st.session_state['export_settings']['quality']
                             )
                             mime_type = 'image/webp'
                         else:
@@ -833,7 +805,7 @@ class UIComponents:
                             mime=mime_type
                         )
                         # Сохраняем для возможного повторного использования
-                        st.session_state.preview_image = processed_img
+                        st.session_state['preview_image'] = processed_img
                     else:
                         st.error("❌ Не удалось загрузить изображение. Проверьте URL.")
                 else:
@@ -859,12 +831,13 @@ class UIComponents:
             end_idx = st.number_input(
                 "Закончить на строке",
                 start_idx, total_rows-1,
-                min(start_idx + st.session_state.processing_settings['batch_size'] - 1, total_rows-1)
+                min=start_idx + st.session_state['processing_settings'].get('batch_size', 100) - 1, 
+                value=min(start_idx + st.session_state['processing_settings'].get('batch_size', 100) - 1, total_rows-1)
             )
         with col3:
             st.write("")
             st.write("")
-            process_button = st.button("🔄 Начать обработку", type="primary", use_container_width=True)
+            process_button = st.button("🔄 Начать обработку")
         # Информация о партии
         batch_size = end_idx - start_idx + 1
         if batch_size > 0:
@@ -872,7 +845,7 @@ class UIComponents:
         # Обработка
         if process_button and batch_size > 0:
             # Сброс статистики
-            st.session_state.processing_stats = {
+            st.session_state['processing_stats'] = {
                 'total': batch_size,
                 'success': 0,
                 'failed': 0,
@@ -880,37 +853,35 @@ class UIComponents:
                 'end_time': None
             }
             # Создаем элементы интерфейса для прогресса
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            results_placeholder = st.empty()
-            st.session_state.progress_bar = progress_bar
-            st.session_state.status_text = status_text
+            st.session_state['progress_bar'] = st.progress(0)
+            st.session_state['status_text'] = st.empty()
+            st.session_state['results_placeholder'] = st.empty()
             # Запускаем обработку
             with st.spinner("Запуск обработки..."):
                 results = generator.process_batch(
-                    st.session_state.df,
+                    st.session_state['df'],
                     start_idx,
                     end_idx,
-                    st.session_state.column_mapping,
-                    st.session_state.current_template,
+                    st.session_state['column_mapping'],
+                    st.session_state['current_template'],
                     {
-                        **st.session_state.export_settings,
-                        'timeout': st.session_state.processing_settings['timeout']
+                        **st.session_state['export_settings'],
+                        'timeout': st.session_state['processing_settings']['timeout']
                     },
-                    st.session_state.processing_settings
+                    st.session_state['processing_settings']
                 )
             # Обновляем статистику
             success_count = sum(1 for r in results if r['status'] == 'success')
             failed_count = len(results) - success_count
-            st.session_state.processing_stats.update({
+            st.session_state['processing_stats'].update({
                 'success': success_count,
                 'failed': failed_count,
                 'end_time': datetime.now()
             })
-            st.session_state.processed_count += success_count
-            st.session_state.batch_results = results
+            st.session_state['processed_count'] += success_count
+            st.session_state['batch_results'] = results
             # Показываем результаты
-            with results_placeholder.container():
+            with st.session_state['results_placeholder'].container():
                 st.success(f"✅ Обработка завершена!")
                 # Сводка
                 col1, col2, col3 = st.columns(3)
@@ -919,10 +890,10 @@ class UIComponents:
                 with col2:
                     st.metric("С ошибками", failed_count)
                 with col3:
-                    if st.session_state.processing_stats['start_time'] and st.session_state.processing_stats['end_time']:
+                    if st.session_state['processing_stats']['start_time'] and st.session_state['processing_stats']['end_time']:
                         duration = (
-                            st.session_state.processing_stats['end_time'] - 
-                            st.session_state.processing_stats['start_time']
+                            st.session_state['processing_stats']['end_time'] - 
+                            st.session_state['processing_stats']['start_time']
                         ).total_seconds()
                         st.metric("Время", f"{duration:.1f} сек")
                 # Детали ошибок
@@ -944,8 +915,7 @@ class UIComponents:
                                         label="📦 Скачать ZIP архив",
                                         data=f.read(),
                                         file_name=os.path.basename(zip_path),
-                                        mime="application/zip",
-                                        use_container_width=True
+                                        mime="application/zip"
                                     )
                             with col2:
                                 with open(csv_path, 'rb') as f:
@@ -953,8 +923,7 @@ class UIComponents:
                                         label="📊 Скачать отчет (CSV)",
                                         data=f.read(),
                                         file_name=os.path.basename(csv_path),
-                                        mime="text/csv",
-                                        use_container_width=True
+                                        mime="text/csv"
                                     )
                             # Информация о файлах
                             zip_size = os.path.getsize(zip_path) / (1024 * 1024)
@@ -964,29 +933,29 @@ class UIComponents:
     def render_statistics_tab():
         """Отрисовка вкладки статистики"""
         st.header("📊 Статистика и аналитика")
-        if st.session_state.processed_count == 0:
+        if st.session_state['processed_count'] == 0:
             st.info("📈 Статистика появится после обработки данных")
             return
         # Основные метрики
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Всего обработано", st.session_state.processed_count)
+            st.metric("Всего обработано", st.session_state['processed_count'])
         with col2:
-            if st.session_state.batch_results:
+            if st.session_state['batch_results']:
                 success_rate = (
-                    sum(1 for r in st.session_state.batch_results if r['status'] == 'success') /
-                    len(st.session_state.batch_results) * 100
+                    sum(1 for r in st.session_state['batch_results'] if r['status'] == 'success') /
+                    len(st.session_state['batch_results']) * 100
                 )
                 st.metric("Успешность", f"{success_rate:.1f}%")
         with col3:
             st.metric("Текущий шаблон", 
-                     InfographicTemplates.TEMPLATES[st.session_state.current_template]['name'])
+                     InfographicTemplates.TEMPLATES[st.session_state['current_template']]['name'])
         with col4:
-            st.metric("Формат экспорта", st.session_state.export_settings['format'])
+            st.metric("Формат экспорта", st.session_state['export_settings']['format'])
         # Графики и детальная статистика
-        if st.session_state.batch_results:
+        if st.session_state['batch_results']:
             st.subheader("📈 Детальная статистика последней обработки")
-            results_df = pd.DataFrame(st.session_state.batch_results)
+            results_df = pd.DataFrame(st.session_state['batch_results'])
             if 'status' in results_df.columns:
                 status_counts = results_df['status'].value_counts()
                 col1, col2 = st.columns(2)
@@ -994,11 +963,11 @@ class UIComponents:
                     st.bar_chart(status_counts)
                 with col2:
                     st.dataframe(status_counts)
-            if (st.session_state.processing_stats['start_time'] and 
-                st.session_state.processing_stats['end_time']):
+            if (st.session_state['processing_stats']['start_time'] and 
+                st.session_state['processing_stats']['end_time']):
                 duration = (
-                    st.session_state.processing_stats['end_time'] - 
-                    st.session_state.processing_stats['start_time']
+                    st.session_state['processing_stats']['end_time'] - 
+                    st.session_state['processing_stats']['start_time']
                 ).total_seconds()
                 if duration > 0 and len(results_df) > 0:
                     speed = len(results_df) / duration
@@ -1110,7 +1079,7 @@ class UIComponents:
                - Закройте другие приложения
                - Уменьшите размер партии
                - Уменьшите целевую размер изображений
-            "")
+            """)
 
 # ============================
 # ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
@@ -1145,21 +1114,21 @@ def main():
             st.subheader("🏷️ Настройка имен файлов")
             col1, col2 = st.columns(2)
             with col1:
-                add_prefix = st.checkbox("Добавить префикс", value=False)
+                add_prefix = st.checkbox("Добавить префикс", value=st.session_state['export_settings'].get('prefix', ''))
                 if add_prefix:
-                    prefix = st.text_input("Префикс", value="product_")
-                    st.session_state.export_settings['prefix'] = prefix
+                    prefix = st.text_input("Префикс", value=st.session_state['export_settings'].get('prefix', 'product_'))
+                    st.session_state['export_settings']['prefix'] = prefix
             with col2:
-                add_suffix = st.checkbox("Добавить суффикс", value=False)
+                add_suffix = st.checkbox("Добавить суффикс", value=st.session_state['export_settings'].get('suffix', ''))
                 if add_suffix:
-                    suffix = st.text_input("Суффикс", value="_promo")
-                    st.session_state.export_settings['suffix'] = suffix
+                    suffix = st.text_input("Суффикс", value=st.session_state['export_settings'].get('suffix', '_promo'))
+                    st.session_state['export_settings']['suffix'] = suffix
             # Автоподбор колонок
-            if st.button("🔍 Автоподбор колонок", type="secondary"):
+            if st.button("🔍 Автоподбор колонок"):
                 suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
-                st.session_state.column_mapping = suggestions
+                st.session_state['column_mapping'] = suggestions
                 st.success("✅ Колонки автоматически подобраны!")
-                st.rerun()
+                st.experimental_rerun()
         
         with tab2:
             ui.render_preview_tab(generator)
@@ -1173,35 +1142,36 @@ def main():
         with tab5:
             ui.render_instructions_tab()
     else:
-    # Экран приветствия
-    st.markdown("""
-    ## 🚀 Добро пожаловать в Генератор Инфографики!
-    **Превратите ваши Excel данные в профессиональную инфографику за несколько кликов.**
-    ### 📋 Как начать:
-    1. **Подготовьте Excel файл** с данными о товарах
-    2. **Загрузите файл** в боковой панели слева
-    3. **Настройте соответствие** колонок элементам инфографики
-    4. **Выберите шаблон** дизайна
-    5. **Протестируйте** на одном товаре
-    6. **Запустите массовую обработку**
-    ### ⚡ Основные возможности:
-    - ✅ **Поддержка Excel** (.xlsx, .xls)
-    - ✅ **4 готовых шаблона** дизайна
-    - ✅ **Автоподбор** колонок
-    - ✅ **Пакетная обработка** с многопоточностью
-    - ✅ **Экспорт** в PNG, JPEG, WebP
-    - ✅ **Автоматическое создание ZIP** архива
-    - ✅ **Подробная статистика** обработки
-    ### 🎯 Идеально для:
-    - 🛍️ **Интернет-магазины** - карточки товаров
-    - 📱 **Соцсети** - посты для Instagram, Facebook
-    - 📊 **Маркетплейсы** - Yandex Market, Ozon, Wildberries
-    - 🏢 **B2B компании** - каталоги продукции
-    - 🏷️ **Распродажи** - акционные баннеры
-    """)
-        ---        
-        **📁 Подготовьте ваш Excel файл и начните создавать профессиональную инфографику уже сегодня!**
+        # Экран приветствия
+        st.markdown("""
+        ## 🚀 Добро пожаловать в Генератор Инфографики!
+        **Превратите ваши Excel данные в профессиональную инфографику за несколько кликов.**
+        ### 📋 Как начать:
+        1. **Подготовьте Excel файл** с данными о товарах
+        2. **Загрузите файл** в боковой панели слева
+        3. **Настройте соответствие** колонок элементам инфографики
+        4. **Выберите шаблон** дизайна
+        5. **Протестируйте** на одном товаре
+        6. **Запустите массовую обработку**
+        ### ⚡ Основные возможности:
+        - ✅ **Поддержка Excel** (.xlsx, .xls)
+        - ✅ **4 готовых шаблона** дизайна
+        - ✅ **Автоподбор** колонок
+        - ✅ **Пакетная обработка** с многопоточностью
+        - ✅ **Экспорт** в PNG, JPEG, WebP
+        - ✅ **Автоматическое создание ZIP** архива
+        - ✅ **Подробная статистика** обработки
+        ### 🎯 Идеально для:
+        - 🛍️ **Интернет-магазины** - карточки товаров
+        - 📱 **Соцсети** - посты для Instagram, Facebook
+        - 📊 **Маркетплейсы** - Yandex Market, Ozon, Wildberries
+        - 🏢 **B2B компании** - каталоги продукции
+        - 🏷️ **Распродажи** - акционные баннеры
         """)
+        st.markdown("---")
+        st.markdown(
+            "📁 Подготовьте ваш Excel файл и начните создавать профессиональную инфографику уже сегодня!"
+        )
         # Пример структуры файла
         with st.expander("📋 Пример структуры Excel файла"):
             example_data = {
@@ -1228,6 +1198,7 @@ def main():
                 file_name="шаблон_товары.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
     # Футер
     st.markdown("---")
     st.markdown(
@@ -1237,7 +1208,7 @@ def main():
         Обработано изображений: <b>{processed_count}</b></p>
         <p>Для вопросов и предложений: support@example.com</p>
     </div>
-    """.format(processed_count=st.session_state.processed_count), unsafe_allow_html=True
+    """.format(processed_count=st.session_state['processed_count']), unsafe_allow_html=True
     )
 
 # ============================
