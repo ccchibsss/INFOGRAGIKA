@@ -958,7 +958,7 @@ class UIComponents:
                "Выберите Excel файл",
                type=['xlsx', 'xls'],
                help="Файл должен содержать данные о товарах",
-               key="file_uploader_sidebar"
+               key="sidebar_file_uploader"
            )
            
            if uploaded_file:
@@ -978,7 +978,7 @@ class UIComponents:
                    preview_rows = st.slider(
                        "Строк для предпросмотра", 
                        5, 50, 10,
-                       key="preview_rows_slider"
+                       key="sidebar_preview_rows_slider"
                    )
                    st.dataframe(st.session_state.df.head(preview_rows))
            
@@ -991,7 +991,7 @@ class UIComponents:
                format_func=lambda x: f"{InfographicTemplates.TEMPLATES[x]['name']} - "
                                    f"{InfographicTemplates.TEMPLATES[x]['description']}",
                index=template_options.index(current_template) if current_template in template_options else 0,
-               key="template_selectbox"
+               key="sidebar_template_selectbox"
            )
            st.session_state.current_template = selected_template
            
@@ -1008,7 +1008,7 @@ class UIComponents:
                    index=["PNG", "JPEG", "WebP"].index(
                        st.session_state.export_settings.get('format', 'PNG')
                    ),
-                   key="export_format_selectbox"
+                   key="sidebar_export_format_selectbox"
                )
                st.session_state.export_settings['format'] = export_format
            with col2:
@@ -1016,14 +1016,14 @@ class UIComponents:
                    "Качество",
                    50, 100,
                    st.session_state.export_settings.get('quality', 85),
-                   key="quality_slider"
+                   key="sidebar_quality_slider"
                )
                st.session_state.export_settings['quality'] = quality
            
            resize_checkbox = st.checkbox(
                "Изменять размер",
                st.session_state.export_settings.get('resize', True),
-               key="resize_checkbox"
+               key="sidebar_resize_checkbox"
            )
            st.session_state.export_settings['resize'] = resize_checkbox
            
@@ -1032,7 +1032,7 @@ class UIComponents:
                    "Целевой размер (px)",
                    500, 4000,
                    st.session_state.export_settings.get('target_size', 1200),
-                   key="target_size_number"
+                   key="sidebar_target_size_number"
                )
                st.session_state.export_settings['target_size'] = target_size
            
@@ -1043,7 +1043,7 @@ class UIComponents:
                    "Размер партии",
                    1, 10000,
                    st.session_state.processing_settings.get('batch_size', 100),
-                   key="batch_size_number"
+                   key="sidebar_batch_size_number"
                )
                st.session_state.processing_settings['batch_size'] = batch_size
            with col2:
@@ -1051,7 +1051,7 @@ class UIComponents:
                    "Максимум потоков",
                    1, 32,
                    st.session_state.processing_settings.get('max_workers', 8),
-                   key="max_workers_number"
+                   key="sidebar_max_workers_number"
                )
                st.session_state.processing_settings['max_workers'] = max_workers
            
@@ -1059,7 +1059,7 @@ class UIComponents:
                "Таймаут (сек)",
                5, 60,
                st.session_state.processing_settings.get('timeout', 15),
-               key="timeout_number"
+               key="sidebar_timeout_number"
            )
            st.session_state.processing_settings['timeout'] = timeout_input
            
@@ -1067,7 +1067,7 @@ class UIComponents:
                "Повторные попытки",
                0, 5,
                st.session_state.processing_settings.get('retry_count', 2),
-               key="retry_count_number"
+               key="sidebar_retry_count_number"
            )
            st.session_state.processing_settings['retry_count'] = retry_count
            
@@ -1092,7 +1092,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('top_left', available_columns[0])
                    ) if st.session_state.column_mapping.get('top_left') in available_columns else 0,
-                   key="top_left_selectbox"
+                   key="mapping_top_left_selectbox"
                )
                st.session_state.column_mapping['top_right'] = st.selectbox(
                    "Верхний правый угол (Цена)",
@@ -1100,7 +1100,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('top_right', available_columns[1])
                    ) if st.session_state.column_mapping.get('top_right') in available_columns and len(available_columns) > 1 else min(1, len(available_columns)-1),
-                   key="top_right_selectbox"
+                   key="mapping_top_right_selectbox"
                )
                st.session_state.column_mapping['image_url'] = st.selectbox(
                    "URL основного изображения",
@@ -1108,7 +1108,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('image_url', available_columns[2])
                    ) if st.session_state.column_mapping.get('image_url') in available_columns and len(available_columns) > 2 else min(2, len(available_columns)-1),
-                   key="image_url_selectbox"
+                   key="mapping_image_url_selectbox"
                )
            
            with col2:
@@ -1118,7 +1118,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('bottom_left', available_columns[3])
                    ) if st.session_state.column_mapping.get('bottom_left') in available_columns and len(available_columns) > 3 else min(3, len(available_columns)-1),
-                   key="bottom_left_selectbox"
+                   key="mapping_bottom_left_selectbox"
                )
                st.session_state.column_mapping['bottom_right'] = st.selectbox(
                    "Нижний правый угол (Скидка/Детали)",
@@ -1126,7 +1126,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('bottom_right', available_columns[4])
                    ) if st.session_state.column_mapping.get('bottom_right') in available_columns and len(available_columns) > 4 else min(4, len(available_columns)-1),
-                   key="bottom_right_selectbox"
+                   key="mapping_bottom_right_selectbox"
                )
                st.session_state.column_mapping['filename'] = st.selectbox(
                    "Имена файлов (источник)",
@@ -1134,7 +1134,7 @@ class UIComponents:
                    index=available_columns.index(
                        st.session_state.column_mapping.get('filename', available_columns[0])
                    ) if st.session_state.column_mapping.get('filename') in available_columns else 0,
-                   key="filename_selectbox"
+                   key="mapping_filename_selectbox"
                )
            
            # Дополнительная колонка для изображения наложения
@@ -1148,7 +1148,7 @@ class UIComponents:
                    ["Не использовать"] + available_columns,
                    index=0 if st.session_state.column_mapping.get('overlay_image_url') not in available_columns else 
                          available_columns.index(st.session_state.column_mapping.get('overlay_image_url')) + 1,
-                   key="overlay_image_selectbox"
+                   key="mapping_overlay_image_selectbox"
                )
                
                if overlay_image_column != "Не использовать":
@@ -1161,7 +1161,7 @@ class UIComponents:
                st.session_state.image_overlay_settings['enabled'] = st.checkbox(
                    "Включить наложение",
                    value=st.session_state.image_overlay_settings.get('enabled', False),
-                   key="enable_overlay_checkbox"
+                   key="mapping_enable_overlay_checkbox"
                )
    
    @staticmethod
@@ -1180,7 +1180,7 @@ class UIComponents:
                type=['ttf', 'otf', 'TTF', 'OTF'],
                accept_multiple_files=True,
                help="Загрузите свои шрифты для использования в инфографике",
-               key="font_uploader"
+               key="font_settings_font_uploader"
            )
            
            if uploaded_fonts:
@@ -1215,7 +1215,7 @@ class UIComponents:
                    "Основной шрифт",
                    font_options,
                    index=current_main_index,
-                   key="main_font_selectbox"
+                   key="font_settings_main_font_selectbox"
                )
                
                if main_font_name:
@@ -1230,7 +1230,7 @@ class UIComponents:
                    "Жирный шрифт (для заголовков)",
                    ["Тот же что основной"] + font_options,
                    index=0 if current_bold_font == current_main_font else current_bold_index + 1,
-                   key="bold_font_selectbox"
+                   key="font_settings_bold_font_selectbox"
                )
                
                if bold_font_name == "Тот же что основной":
@@ -1245,7 +1245,7 @@ class UIComponents:
                    0.5, 2.0,
                    st.session_state.font_settings.get('font_size_multiplier', 1.0),
                    0.1,
-                   key="font_size_multiplier_slider"
+                   key="font_settings_font_size_multiplier_slider"
                )
                st.session_state.font_settings['font_size_multiplier'] = font_size_multiplier
                
@@ -1265,7 +1265,7 @@ class UIComponents:
                    "🔄 Симметричные смещения для всех углов",
                    value=st.session_state.get('symmetrical_offsets', False),
                    help="При включении все углы будут иметь одинаковые смещения",
-                   key="symmetrical_offsets_checkbox"
+                   key="text_offset_symmetrical_offsets_checkbox"
                )
                st.session_state.symmetrical_offsets = symmetrical
            
@@ -1383,14 +1383,14 @@ class UIComponents:
                        "Общее смещение по X (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_left'].get('x_offset', 0),
-                       key="common_x_offset"
+                       key="text_offset_common_x_offset_symmetrical"
                    )
                with col2:
                    common_y_offset = st.number_input(
                        "Общее смещение по Y (%)",
                        -100, 100,
                        st.session_state.text_offset_settings['top_left'].get('y_offset', 0),
-                       key="common_y_offset"
+                       key="text_offset_common_y_offset_symmetrical"
                    )
                
                st.session_state.text_offset_settings = {
@@ -1404,7 +1404,7 @@ class UIComponents:
            
            col1, col2 = st.columns(2)
            with col1:
-               if st.button("🔄 Сбросить смещения", type="secondary", key="reset_offsets_button"):
+               if st.button("🔄 Сбросить смещения", type="secondary", key="text_offset_reset_offsets_button"):
                    st.session_state.text_offset_settings = {
                        'top_left': {'x_offset': 0, 'y_offset': 0},
                        'top_right': {'x_offset': 0, 'y_offset': 0},
@@ -1415,7 +1415,7 @@ class UIComponents:
            
            with col2:
                if not symmetrical:
-                   if st.button("📐 Сделать симметричными", type="secondary", key="make_symmetrical_button"):
+                   if st.button("📐 Сделать симметричными", type="secondary", key="text_offset_make_symmetrical_button"):
                        top_left_settings = st.session_state.text_offset_settings['top_left']
                        st.session_state.text_offset_settings = {
                            'top_left': top_left_settings,
@@ -1484,7 +1484,7 @@ class UIComponents:
                    "Смещение по X (%)",
                    -100, 100,
                    st.session_state.image_overlay_settings.get('x_offset', 0),
-                   key="overlay_x_offset"
+                   key="overlay_x_offset_input"
                )
                st.session_state.image_overlay_settings['x_offset'] = x_offset
            
@@ -1493,14 +1493,14 @@ class UIComponents:
                    "Смещение по Y (%)",
                    -100, 100,
                    st.session_state.image_overlay_settings.get('y_offset', 0),
-                   key="overlay_y_offset"
+                   key="overlay_y_offset_input"
                )
                st.session_state.image_overlay_settings['y_offset'] = y_offset
            
            st.caption("💡 Используйте смещения для точной настройки положения изображения")
            
            # Предпросмотр позиции
-           if st.checkbox("Показать предпросмотр позиции", value=False, key="show_overlay_preview"):
+           if st.checkbox("Показать предпросмотр позиции", value=False, key="overlay_show_preview_checkbox"):
                st.info(f"**Позиция:** {position}")
                st.info(f"**Масштаб:** {scale}%, **Прозрачность:** {opacity}%")
                st.info(f"**Смещение:** X={x_offset}%, Y={y_offset}%")
@@ -1531,7 +1531,7 @@ class UIComponents:
                min_value=0,
                max_value=len(st.session_state.df)-1,
                value=0,
-               key="test_row_idx_number"
+               key="preview_test_row_idx_number"
            )
        with col2:
            timeout = st.number_input(
@@ -1565,11 +1565,11 @@ class UIComponents:
                with st.expander("📋 Исходные данные строки"):
                    col1, col2 = st.columns(2)
                    with col1:
-                       st.json(text_data, key="text_data_json")
+                       st.json(text_data, key="preview_text_data_json")
                    with col2:
-                       st.code(f"Основное изображение: {image_url}", key="main_url_code")
+                       st.code(f"Основное изображение: {image_url}", key="preview_main_url_code")
                        if overlay_image_url:
-                           st.code(f"Изображение наложения: {overlay_image_url}", key="overlay_url_code")
+                           st.code(f"Изображение наложения: {overlay_image_url}", key="preview_overlay_url_code")
                
                if image_url and image_url.startswith(('http://', 'https://')):
                    img = generator.image_processor.load_image_from_url(image_url, timeout)
@@ -1620,7 +1620,7 @@ class UIComponents:
                            st.caption(f"Шаблон: {st.session_state.current_template}")
                            
                            # Показываем сетку для визуализации позиций
-                           show_grid = st.checkbox("Показать сетку позиций", value=False, key="show_grid_checkbox")
+                           show_grid = st.checkbox("Показать сетку позиций", value=False, key="preview_show_grid_checkbox")
                            if show_grid:
                                grid_img = img.copy()
                                draw = ImageDraw.Draw(grid_img)
@@ -1686,7 +1686,7 @@ class UIComponents:
                            data=buffered.getvalue(),
                            file_name=f"test_preview.{format_ext}",
                            mime=mime_type,
-                           key="test_download_button"
+                           key="preview_test_download_button"
                        )
                        
                        st.session_state.preview_image = processed_img
@@ -1726,14 +1726,14 @@ class UIComponents:
            start_idx = st.number_input(
                "Начать с строки",
                0, total_rows-1, 0,
-               key="start_idx_number"
+               key="processing_start_idx_number"
            )
        with col2:
            end_idx = st.number_input(
                "Закончить на строке",
                start_idx, total_rows-1,
                min(start_idx + st.session_state.processing_settings.get('batch_size', 100) - 1, total_rows-1),
-               key="end_idx_number"
+               key="processing_end_idx_number"
            )
        with col3:
            st.write("")
@@ -1742,7 +1742,7 @@ class UIComponents:
                "🔄 Начать обработку", 
                type="primary", 
                use_container_width=True,
-               key="process_button"
+               key="processing_process_button"
            )
        
        batch_size = end_idx - start_idx + 1
@@ -1758,7 +1758,7 @@ class UIComponents:
                'end_time': None
            }
            
-           progress_bar = st.progress(0, key="progress_bar")
+           progress_bar = st.progress(0, key="processing_progress_bar")
            status_text = st.empty()
            results_placeholder = st.empty()
            
@@ -1799,16 +1799,16 @@ class UIComponents:
                
                col1, col2, col3 = st.columns(3)
                with col1:
-                   st.metric("Успешно", success_count, key="success_metric")
+                   st.metric("Успешно", success_count, key="processing_success_metric")
                with col2:
-                   st.metric("С ошибками", failed_count, key="failed_metric")
+                   st.metric("С ошибками", failed_count, key="processing_failed_metric")
                with col3:
                    if st.session_state.processing_stats['start_time'] and st.session_state.processing_stats['end_time']:
                        duration = (
                            st.session_state.processing_stats['end_time'] -
                            st.session_state.processing_stats['start_time']
                        ).total_seconds()
-                       st.metric("Время", f"{duration:.1f} сек", key="time_metric")
+                       st.metric("Время", f"{duration:.1f} сек", key="processing_time_metric")
                
                if failed_count > 0:
                    with st.expander("📋 Детали ошибок"):
@@ -1830,7 +1830,7 @@ class UIComponents:
                                        file_name=os.path.basename(zip_path),
                                        mime="application/zip",
                                        use_container_width=True,
-                                       key="zip_download_button"
+                                       key="processing_zip_download_button"
                                    )
                            with col2:
                                with open(csv_path, 'rb') as f:
@@ -1840,7 +1840,7 @@ class UIComponents:
                                        file_name=os.path.basename(csv_path),
                                        mime="text/csv",
                                        use_container_width=True,
-                                       key="csv_download_button"
+                                       key="processing_csv_download_button"
                                    )
                            
                            zip_size = os.path.getsize(zip_path) / (1024 * 1024)
@@ -1857,23 +1857,23 @@ class UIComponents:
        
        col1, col2, col3, col4 = st.columns(4)
        with col1:
-           st.metric("Всего обработано", st.session_state.get('processed_count', 0), key="total_processed_metric")
+           st.metric("Всего обработано", st.session_state.get('processed_count', 0), key="stats_total_processed_metric")
        with col2:
            if st.session_state.get('batch_results'):
                success_rate = (
                    sum(1 for r in st.session_state.batch_results if r['status'] == 'success') /
                    len(st.session_state.batch_results) * 100
                )
-               st.metric("Успешность", f"{success_rate:.1f}%", key="success_rate_metric")
+               st.metric("Успешность", f"{success_rate:.1f}%", key="stats_success_rate_metric")
        with col3:
            st.metric("Текущий шаблон",
                     InfographicTemplates.TEMPLATES[st.session_state.current_template]['name'],
-                    key="template_metric")
+                    key="stats_template_metric")
        with col4:
-           st.metric("Формат экспорта", st.session_state.export_settings.get('format', 'PNG'), key="format_metric")
+           st.metric("Формат экспорта", st.session_state.export_settings.get('format', 'PNG'), key="stats_format_metric")
        
        # Показываем текущие настройки
-       show_settings = st.checkbox("Показать текущие настройки", value=False, key="show_settings_checkbox")
+       show_settings = st.checkbox("Показать текущие настройки", value=False, key="stats_show_settings_checkbox")
        if show_settings:
            st.subheader("⚙️ Текущие настройки")
            
@@ -1902,9 +1902,9 @@ class UIComponents:
                status_counts = results_df['status'].value_counts()
                col1, col2 = st.columns(2)
                with col1:
-                   st.bar_chart(status_counts, key="status_chart")
+                   st.bar_chart(status_counts, key="stats_status_chart")
                with col2:
-                   st.dataframe(status_counts, key="status_dataframe")
+                   st.dataframe(status_counts, key="stats_status_dataframe")
            
            if (st.session_state.processing_stats.get('start_time') and
                st.session_state.processing_stats.get('end_time')):
@@ -1915,7 +1915,7 @@ class UIComponents:
                
                if duration > 0 and len(results_df) > 0:
                    speed = len(results_df) / duration
-                   st.metric("Скорость обработки", f"{speed:.2f} изобр/сек", key="speed_metric")
+                   st.metric("Скорость обработки", f"{speed:.2f} изобр/сек", key="stats_speed_metric")
 
    @staticmethod
    def render_instructions_tab():
@@ -2042,14 +2042,14 @@ def main():
            st.subheader("🏷️ Настройка имен файлов")
            col1, col2 = st.columns(2)
            with col1:
-               add_prefix = st.checkbox("Добавить префикс", value=False, key="add_prefix_checkbox")
+               add_prefix = st.checkbox("Добавить префикс", value=False, key="settings_add_prefix_checkbox")
                if add_prefix:
-                   prefix = st.text_input("Префикс", value="product_", key="prefix_text")
+                   prefix = st.text_input("Префикс", value="product_", key="settings_prefix_text")
                    st.session_state.export_settings['prefix'] = prefix
            with col2:
-               add_suffix = st.checkbox("Добавить суффикс", value=False, key="add_suffix_checkbox")
+               add_suffix = st.checkbox("Добавить суффикс", value=False, key="settings_add_suffix_checkbox")
                if add_suffix:
-                   suffix = st.text_input("Суффикс", value="_promo", key="suffix_text")
+                   suffix = st.text_input("Суффикс", value="_promo", key="settings_suffix_text")
                    st.session_state.export_settings['suffix'] = suffix
            
            # Настройки шрифтов
@@ -2061,7 +2061,7 @@ def main():
            # Настройки наложения изображений
            ui.render_image_overlay_settings()
            
-           if st.button("🔍 Автоподбор колонок", type="secondary", key="auto_map_button"):
+           if st.button("🔍 Автоподбор колонок", type="secondary", key="settings_auto_map_button"):
                suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
                st.session_state.column_mapping = suggestions
                st.success("✅ Колонки автоматически подобраны!")
@@ -2156,7 +2156,7 @@ def main():
                data=buffer.getvalue(),
                file_name="шаблон_товары_v4.xlsx",
                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-               key="template_download_button"
+               key="main_template_download_button"
            )
        
        # Футер
