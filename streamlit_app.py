@@ -16,12 +16,13 @@ import re
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import tempfile
 
 # ============================
 # НАСТРОЙКА ПРИЛОЖЕНИЯ
 # ============================
 st.set_page_config(
-   page_title="🎯 Генератор Инфографики v3.0 - Excel версия",
+   page_title="🎯 Генератор Инфографики v4.0 - Расширенная версия",
    page_icon="🎨",
    layout="wide",
    initial_sidebar_state="expanded"
@@ -58,6 +59,8 @@ def init_session_state():
        'output_dir': 'output_infographics',
        'batch_results': [],
        'image_cache': {},
+       'font_cache': {},  # Кэш для загруженных шрифтов
+       'uploaded_fonts': [],  # Список загруженных шрифтов
        'preview_image': None,
        'uploaded_file_name': None,
        'export_settings': {
@@ -77,6 +80,23 @@ def init_session_state():
            'top_right': {'x_offset': 0, 'y_offset': 0},
            'bottom_left': {'x_offset': 0, 'y_offset': 0},
            'bottom_right': {'x_offset': 0, 'y_offset': 0}
+       },
+       'image_overlay_settings': {  # Настройки для наложения изображений
+           'enabled': False,
+           'position': 'center',
+           'scale': 100,
+           'opacity': 100,
+           'x_offset': 0,
+           'y_offset': 0,
+           'max_width': 50,
+           'max_height': 50
+       },
+       'symmetrical_offsets': False,
+       'font_settings': {  # Настройки шрифтов
+           'main_font': 'system_arial',
+           'bold_font': 'system_arial',
+           'font_size_multiplier': 1.0,
+           'auto_font_selection': True
        }
    }
    for key, value in defaults.items():
@@ -100,6 +120,11 @@ class InfographicTemplates:
                "top_right": {"x": 0.95, "y": 0.05, "align": "right", "max_width": 0.4},
                "bottom_left": {"x": 0.05, "y": 0.85, "align": "left", "max_width": 0.4},
                "bottom_right": {"x": 0.95, "y": 0.85, "align": "right", "max_width": 0.4}
+           },
+           "image_positions": {  # Позиции для наложения изображений
+               "center": {"x": 0.5, "y": 0.5, "anchor": "center"},
+               "top_center": {"x": 0.5, "y": 0.1, "anchor": "center"},
+               "bottom_center": {"x": 0.5, "y": 0.9, "anchor": "center"}
            },
            "font_sizes": {
                "top_left": 36,
@@ -127,6 +152,11 @@ class InfographicTemplates:
                "bottom_left": {"x": 0.1, "y": 0.88, "align": "left", "max_width": 0.8},
                "bottom_right": {"x": 0.9, "y": 0.88, "align": "right", "max_width": 0.3}
            },
+           "image_positions": {
+               "center": {"x": 0.5, "y": 0.5, "anchor": "center"},
+               "top_right": {"x": 0.85, "y": 0.15, "anchor": "center"},
+               "bottom_left": {"x": 0.15, "y": 0.85, "anchor": "center"}
+           },
            "font_sizes": {
                "top_left": 32,
                "top_right": 28,
@@ -153,6 +183,11 @@ class InfographicTemplates:
                "bottom_left": {"x": 0.05, "y": 0.9, "align": "left", "max_width": 0.45},
                "bottom_right": {"x": 0.95, "y": 0.9, "align": "right", "max_width": 0.45}
            },
+           "image_positions": {
+               "center": {"x": 0.5, "y": 0.5, "anchor": "center"},
+               "top_left": {"x": 0.15, "y": 0.15, "anchor": "center"},
+               "bottom_right": {"x": 0.85, "y": 0.85, "anchor": "center"}
+           },
            "font_sizes": {
                "top_left": 40,
                "top_right": 42,
@@ -178,6 +213,11 @@ class InfographicTemplates:
                "top_right": {"x": 0.5, "y": 0.15, "align": "center", "max_width": 0.8},
                "bottom_left": {"x": 0.1, "y": 0.8, "align": "left", "max_width": 0.8},
                "bottom_right": {"x": 0.9, "y": 0.9, "align": "right", "max_width": 0.8}
+           },
+           "image_positions": {
+               "center": {"x": 0.5, "y": 0.5, "anchor": "center"},
+               "top": {"x": 0.5, "y": 0.3, "anchor": "center"},
+               "bottom": {"x": 0.5, "y": 0.7, "anchor": "center"}
            },
            "font_sizes": {
                "top_left": 32,
@@ -209,8 +249,133 @@ class InfographicTemplates:
        return cls.TEMPLATES[template_id]["name"]
 
 # ============================
-# УТИЛИТЫ ДЛЯ РАБОТЫ С ИЗОБРАЖЕНИЯМИ
+# УТИЛИТЫ ДЛЯ РАБОТЫ С ИЗОБРАЖЕНИЯМИ И ШРИФТАМИ
 # ============================
+class FontManager:
+   """Класс для управления шрифтами"""
+   
+   @staticmethod
+   def load_font_from_file(uploaded_file):
+       """Загрузка шрифта из файла"""
+       try:
+           # Создаем временный файл для шрифта
+           with tempfile.NamedTemporaryFile(delete=False, suffix='.ttf') as tmp_file:
+               tmp_file.write(uploaded_file.getvalue())
+               tmp_path = tmp_file.name
+           
+           # Пробуем загрузить шрифт
+           try:
+               font = ImageFont.truetype(tmp_path, 24)
+               font_name = uploaded_file.name
+               
+               # Сохраняем шрифт в кэш
+               font_key = hashlib.md5(uploaded_file.getvalue()).hexdigest()
+               
+               if 'font_cache' not in st.session_state:
+                   st.session_state['font_cache'] = {}
+               
+               if 'uploaded_fonts' not in st.session_state:
+                   st.session_state['uploaded_fonts'] = []
+               
+               # Сохраняем информацию о шрифте
+               font_info = {
+                   'name': font_name,
+                   'path': tmp_path,
+                   'key': font_key,
+                   'size': 24
+               }
+               
+               st.session_state.font_cache[font_key] = font_info
+               
+               # Добавляем в список загруженных шрифтов
+               if font_name not in [f['name'] for f in st.session_state.uploaded_fonts]:
+                   st.session_state.uploaded_fonts.append(font_info)
+               
+               return font_key, font_name
+           except Exception as e:
+               logger.error(f"Ошибка загрузки шрифта {uploaded_file.name}: {e}")
+               # Пробуем загрузить как OTF
+               try:
+                   font = ImageFont.truetype(tmp_path, 24)
+                   return font_key, uploaded_file.name
+               except:
+                   return None, None
+       except Exception as e:
+           logger.error(f"Ошибка обработки файла шрифта: {e}")
+           return None, None
+   
+   @staticmethod
+   def get_font(font_key, size):
+       """Получение шрифта по ключу с указанным размером"""
+       try:
+           if font_key in st.session_state.get('font_cache', {}):
+               font_info = st.session_state.font_cache[font_key]
+               return ImageFont.truetype(font_info['path'], size)
+       except Exception as e:
+           logger.error(f"Ошибка получения шрифта: {e}")
+       
+       # Возвращаем стандартный шрифт в случае ошибки
+       try:
+           return ImageFont.load_default(size=size)
+       except:
+           return ImageFont.load_default()
+   
+   @staticmethod
+   def get_available_fonts():
+       """Получение списка доступных шрифтов"""
+       fonts = []
+       
+       # Системные шрифты
+       system_fonts = [
+           {"name": "Arial (системный)", "key": "system_arial", "type": "system"},
+           {"name": "Helvetica (системный)", "key": "system_helvetica", "type": "system"},
+           {"name": "Times New Roman (системный)", "key": "system_times", "type": "system"}
+       ]
+       
+       # Загруженные пользователем шрифты
+       if 'uploaded_fonts' in st.session_state:
+           for font_info in st.session_state.uploaded_fonts:
+               fonts.append({
+                   "name": f"📁 {font_info['name']}",
+                   "key": font_info['key'],
+                   "type": "uploaded"
+               })
+       
+       return system_fonts + fonts
+   
+   @staticmethod
+   def load_system_font(font_name, size):
+       """Загрузка системного шрифта"""
+       try:
+           font_paths = {
+               "system_arial": [
+                   "C:/Windows/Fonts/arial.ttf",
+                   "/System/Library/Fonts/Helvetica.ttc",
+                   "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+               ],
+               "system_helvetica": [
+                   "/System/Library/Fonts/Helvetica.ttc",
+                   "C:/Windows/Fonts/arial.ttf"
+               ],
+               "system_times": [
+                   "C:/Windows/Fonts/times.ttf",
+                   "/System/Library/Fonts/Times New Roman.ttf"
+               ]
+           }
+           
+           if font_name in font_paths:
+               for path in font_paths[font_name]:
+                   if os.path.exists(path):
+                       return ImageFont.truetype(path, size)
+       except Exception as e:
+           logger.error(f"Ошибка загрузки системного шрифта {font_name}: {e}")
+       
+       # Возвращаем стандартный шрифт
+       try:
+           return ImageFont.load_default(size=size)
+       except:
+           return ImageFont.load_default()
+
 class ImageProcessor:
    """Класс для обработки изображений"""
    
@@ -239,65 +404,96 @@ class ImageProcessor:
                    logger.error(f"Не удалось загрузить изображение {url}: {e}")
                    return None
                time.sleep(1)
+       return None
+   
+   @staticmethod
+   def load_overlay_image(image_source):
+       """Загрузка изображения для наложения"""
+       try:
+           if isinstance(image_source, str):
+               # Если это URL
+               if image_source.startswith(('http://', 'https://')):
+                   return ImageProcessor.load_image_from_url(image_source)
+               # Если это base64
+               elif image_source.startswith('data:image'):
+                   return ImageProcessor.load_image_from_base64(image_source)
+               else:
+                   # Пробуем как путь к файлу
+                   if os.path.exists(image_source):
+                       img = Image.open(image_source)
+                       if img.mode != 'RGBA':
+                           img = img.convert('RGBA')
+                       return img
+           # Если это уже объект Image
+           elif isinstance(image_source, Image.Image):
+               return image_source.copy()
+           
+           return None
+       except Exception as e:
+           logger.error(f"Ошибка загрузки изображения для наложения: {e}")
+           return None
+   
+   @staticmethod
+   def load_image_from_base64(base64_string):
+       """Загрузка изображения из base64 строки"""
+       try:
+           # Удаляем префикс data:image
+           if ',' in base64_string:
+               base64_data = base64_string.split(',')[1]
+           else:
+               base64_data = base64_string
+           
+           image_data = base64.b64decode(base64_data)
+           img = Image.open(BytesIO(image_data))
+           if img.mode != 'RGBA':
+               img = img.convert('RGBA')
+           return img
+       except Exception as e:
+           logger.error(f"Ошибка загрузки изображения из base64: {e}")
+           return None
    
    @staticmethod
    def resize_image(img, target_size=1200):
        """Изменение размера изображения с сохранением пропорций"""
-       if img.width > target_size or img.height > target_size:
-           ratio = min(target_size / img.width, target_size / img.height)
-           new_size = (int(img.width * ratio), int(img.height * ratio))
-           img = img.resize(new_size, Image.Resampling.LANCZOS)
-       return img
-   
-   @staticmethod
-   def add_text_to_image(img, text_data, template_id="standard", text_offsets=None):
-       """Добавление текста на изображение по шаблону с учетом смещений"""
        if img is None:
            return None
            
-       template = InfographicTemplates.TEMPLATES[template_id]
+       if img.width > target_size or img.height > target_size:
+           ratio = min(target_size / img.width, target_size / img.height)
+           new_size = (int(img.width * ratio), int(img.height * ratio))
+           # Используем LANCZOS для высококачественного ресайза
+           img = img.resize(new_size, Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+       return img
+   
+   @staticmethod
+   def add_text_to_image(img, text_data, template_id="standard", text_offsets=None, font_settings=None):
+       """Добавление текста на изображение по шаблону с учетом смещений и шрифтов"""
+       if img is None:
+           return None
+           
+       template = InfographicTemplates.TEMPLATES.get(template_id, InfographicTemplates.TEMPLATES["standard"])
        draw = ImageDraw.Draw(img)
        
-       # Загрузка шрифта
-       try:
-           font_paths = [
-               "C:/Windows/Fonts/arial.ttf",
-               "C:/Windows/Fonts/arialbd.ttf",
-               "/System/Library/Fonts/Helvetica.ttc",
-               "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-           ]
-           
-           regular_font = None
-           bold_font = None
-           
-           for path in font_paths:
-               if os.path.exists(path):
-                   try:
-                       regular_font = ImageFont.truetype(path, 24)
-                       bold_font = ImageFont.truetype(path, 24)
-                       break
-                   except:
-                       continue
-           
-           if regular_font is None:
-               regular_font = ImageFont.load_default()
-               bold_font = ImageFont.load_default()
-               
-       except:
-           regular_font = ImageFont.load_default()
-           bold_font = ImageFont.load_default()
+       # Получение настроек шрифта
+       if font_settings is None:
+           font_settings = st.session_state.get('font_settings', {})
+       
+       # Загрузка шрифтов
+       main_font_key = font_settings.get('main_font', 'system_arial')
+       bold_font_key = font_settings.get('bold_font', main_font_key)
+       font_size_multiplier = font_settings.get('font_size_multiplier', 1.0)
        
        # Если offsets не переданы, используем значения по умолчанию
        if text_offsets is None:
-           text_offsets = {
+           text_offsets = st.session_state.get('text_offset_settings', {
                'top_left': {'x_offset': 0, 'y_offset': 0},
                'top_right': {'x_offset': 0, 'y_offset': 0},
                'bottom_left': {'x_offset': 0, 'y_offset': 0},
                'bottom_right': {'x_offset': 0, 'y_offset': 0}
-           }
+           })
        
        # Обработка каждого текстового элемента с учетом смещений
-       for position_key, position_data in template["text_positions"].items():
+       for position_key, position_data in template.get("text_positions", {}).items():
            if position_key in text_data and text_data[position_key]:
                text = str(text_data[position_key])
                if not text.strip():
@@ -309,10 +505,9 @@ class ImageProcessor:
                
                # Применяем смещения
                if position_key in text_offsets:
-                   offset_x = text_offsets[position_key]['x_offset']
-                   offset_y = text_offsets[position_key]['y_offset']
+                   offset_x = text_offsets[position_key].get('x_offset', 0)
+                   offset_y = text_offsets[position_key].get('y_offset', 0)
                    
-                   # Преобразуем проценты в пиксели, если значение > 100 (предполагаем что это пиксели)
                    if abs(offset_x) <= 100:  # Проценты
                        base_x += offset_x * img.width / 100
                    else:  # Пиксели
@@ -326,23 +521,130 @@ class ImageProcessor:
                x = int(base_x)
                y = int(base_y)
                
-               # Выбираем шрифт
-               font_size = template["font_sizes"][position_key]
-               try:
-                   font = ImageFont.truetype("arial.ttf", font_size)
-               except:
-                   font = ImageFont.load_default(size=font_size)
+               # Выбираем шрифт и размер
+               font_size = int(template["font_sizes"].get(position_key, 24) * font_size_multiplier)
+               
+               # Выбираем шрифт в зависимости от позиции
+               if position_key in ['top_left', 'top_right'] and bold_font_key != main_font_key:
+                   # Для заголовков используем жирный шрифт если он отличается
+                   try:
+                       if bold_font_key.startswith('system_'):
+                           font = FontManager.load_system_font(bold_font_key, font_size)
+                       else:
+                           font = FontManager.get_font(bold_font_key, font_size)
+                   except:
+                       font = FontManager.load_system_font('system_arial', font_size)
+               else:
+                   # Для остального текста используем основной шрифт
+                   try:
+                       if main_font_key.startswith('system_'):
+                           font = FontManager.load_system_font(main_font_key, font_size)
+                       else:
+                           font = FontManager.get_font(main_font_key, font_size)
+                   except:
+                       font = FontManager.load_system_font('system_arial', font_size)
                
                # Добавляем тень
-               if template["effects"]["shadow"]:
-                   shadow_color = template["colors"]["shadow"]
+               if template["effects"].get("shadow", True):
+                   shadow_color = template["colors"].get("shadow", (0, 0, 0, 180))
                    draw.text((x+2, y+2), text, font=font, fill=shadow_color)
                
                # Добавляем основной текст
-               text_color = template["colors"]["text"]
+               text_color = template["colors"].get("text", (255, 255, 255, 255))
                draw.text((x, y), text, font=font, fill=text_color,
-                        align=position_data["align"])
+                        align=position_data.get("align", "left"))
        
+       return img
+   
+   @staticmethod
+   def add_image_overlay(background_img, overlay_img, overlay_settings, template_id="standard"):
+       """Добавление изображения поверх основного"""
+       if background_img is None or overlay_img is None:
+           return background_img
+       
+       try:
+           # Создаем копию изображения
+           result_img = background_img.copy()
+           
+           # Получаем настройки позиции из шаблона
+           template = InfographicTemplates.TEMPLATES.get(template_id, InfographicTemplates.TEMPLATES["standard"])
+           
+           if overlay_settings.get('position') in template.get('image_positions', {}):
+               position_data = template['image_positions'][overlay_settings['position']]
+           else:
+               # Позиция по умолчанию
+               position_data = {"x": 0.5, "y": 0.5, "anchor": "center"}
+           
+           # Рассчитываем размеры накладываемого изображения
+           max_width_px = int(background_img.width * overlay_settings.get('max_width', 50) / 100)
+           max_height_px = int(background_img.height * overlay_settings.get('max_height', 50) / 100)
+           
+           # Изменяем размер накладываемого изображения
+           scale = overlay_settings.get('scale', 100) / 100
+           overlay_ratio = min(max_width_px / overlay_img.width, max_height_px / overlay_img.height)
+           new_width = int(overlay_img.width * overlay_ratio * scale)
+           new_height = int(overlay_img.height * overlay_ratio * scale)
+           
+           if new_width > 0 and new_height > 0:
+               overlay_resized = overlay_img.resize((new_width, new_height), 
+                                                   Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+               
+               # Применяем прозрачность
+               opacity = overlay_settings.get('opacity', 100)
+               if opacity < 100:
+                   overlay_resized = ImageProcessor.apply_opacity(overlay_resized, opacity)
+               
+               # Рассчитываем позицию
+               base_x = position_data["x"] * background_img.width
+               base_y = position_data["y"] * background_img.height
+               
+               # Применяем смещения
+               base_x += overlay_settings.get('x_offset', 0) * background_img.width / 100
+               base_y += overlay_settings.get('y_offset', 0) * background_img.height / 100
+               
+               # Применяем якорь (anchor)
+               anchor = position_data.get("anchor", "center")
+               if anchor == "center":
+                   x = int(base_x - new_width / 2)
+                   y = int(base_y - new_height / 2)
+               elif anchor == "top_left":
+                   x = int(base_x)
+                   y = int(base_y)
+               elif anchor == "top_right":
+                   x = int(base_x - new_width)
+                   y = int(base_y)
+               elif anchor == "bottom_left":
+                   x = int(base_x)
+                   y = int(base_y - new_height)
+               elif anchor == "bottom_right":
+                   x = int(base_x - new_width)
+                   y = int(base_y - new_height)
+               else:
+                   x = int(base_x - new_width / 2)
+                   y = int(base_y - new_height / 2)
+               
+               # Накладываем изображение
+               if overlay_resized.mode != 'RGBA':
+                   overlay_resized = overlay_resized.convert('RGBA')
+               
+               result_img.paste(overlay_resized, (x, y), overlay_resized)
+           
+           return result_img
+       except Exception as e:
+           logger.error(f"Ошибка при наложении изображения: {e}")
+           return background_img
+   
+   @staticmethod
+   def apply_opacity(img, opacity):
+       """Применение прозрачности к изображению"""
+       if img.mode != 'RGBA':
+           img = img.convert('RGBA')
+       
+       # Создаем маску с прозрачностью
+       alpha = img.split()[3]
+       alpha = alpha.point(lambda p: p * opacity / 100)
+       
+       img.putalpha(alpha)
        return img
    
    @staticmethod
@@ -350,10 +652,11 @@ class ImageProcessor:
        """Сохранение изображения в файл"""
        try:
            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-           if format.upper() == 'JPEG':
+           format_upper = format.upper()
+           if format_upper == 'JPEG':
                img = img.convert('RGB')
                img.save(filepath, 'JPEG', quality=quality, optimize=True)
-           elif format.upper() == 'WEBP':
+           elif format_upper == 'WEBP':
                img.save(filepath, 'WEBP', quality=quality)
            else:  # PNG по умолчанию
                img.save(filepath, 'PNG', optimize=True)
@@ -409,15 +712,20 @@ class ExcelProcessor:
            'bottom_left': None,
            'bottom_right': None,
            'image_url': None,
+           'overlay_image_url': None,  # Новая колонка для изображений наложения
            'filename': None
        }
+       if df is None:
+           return suggestions
+           
        column_names = [str(col).lower() for col in df.columns]
        keyword_mapping = {
            'top_left': ['название', 'name', 'товар', 'product', 'title'],
            'top_right': ['цена', 'price', 'стоимость', 'руб'],
            'bottom_left': ['характеристики', 'spec', 'описание', 'description', 'детали'],
            'bottom_right': ['скидка', 'discount', 'акция', 'sale', 'распродажа'],
-           'image_url': ['url', 'ссылка', 'image', 'картинка', 'фото', 'photo'],
+           'image_url': ['url', 'ссылка', 'image', 'картинка', 'фото', 'photo', 'основное'],
+           'overlay_image_url': ['лого', 'logo', 'бренд', 'brand', 'дополнительно', 'additional', 'наложение', 'overlay', 'стикер', 'sticker'],
            'filename': ['название', 'name', 'артикул', 'sku', 'код']
        }
        for position, keywords in keyword_mapping.items():
@@ -440,8 +748,8 @@ class InfographicGenerator:
        self.image_processor = ImageProcessor()
        self.excel_processor = ExcelProcessor()
 
-   def process_single_row(self, row, column_mapping, template_id, export_settings, row_index=0, text_offsets=None):
-       """Обработка одной строки данных с учетом смещений текста"""
+   def process_single_row(self, row, column_mapping, template_id, export_settings, row_index=0, text_offsets=None, overlay_settings=None, font_settings=None):
+       """Обработка одной строки данных с учетом смещений текста и наложения изображений"""
        try:
            text_data = {
                'top_left': row.get(column_mapping.get('top_left'), ''),
@@ -449,7 +757,14 @@ class InfographicGenerator:
                'bottom_left': row.get(column_mapping.get('bottom_left'), ''),
                'bottom_right': row.get(column_mapping.get('bottom_right'), '')
            }
+           
+           # Основное изображение
            image_url = row.get(column_mapping.get('image_url'), '')
+           
+           # Изображение для наложения
+           overlay_image_url = None
+           if 'overlay_image_url' in column_mapping:
+               overlay_image_url = row.get(column_mapping.get('overlay_image_url'), '')
            
            filename_source = row.get(column_mapping.get('filename'), '')
            if filename_source:
@@ -461,10 +776,11 @@ class InfographicGenerator:
                return {
                    'row_index': row_index,
                    'status': 'error',
-                   'message': 'Некорректный URL изображения',
+                   'message': 'Некорректный URL основного изображения',
                    'filename': filename
                }
            
+           # Загружаем основное изображение
            img = self.image_processor.load_image_from_url(
                image_url,
                timeout=export_settings.get('timeout', 15)
@@ -474,7 +790,7 @@ class InfographicGenerator:
                return {
                    'row_index': row_index,
                    'status': 'error',
-                   'message': 'Не удалось загрузить изображение',
+                   'message': 'Не удалось загрузить основное изображение',
                    'filename': filename
                }
            
@@ -484,15 +800,27 @@ class InfographicGenerator:
                    export_settings.get('target_size', 1200)
                )
            
-           # Передаем смещения текста в обработчик
+           # Добавляем текст
            processed_img = self.image_processor.add_text_to_image(
                img,
                text_data,
                template_id,
-               text_offsets=text_offsets
+               text_offsets=text_offsets,
+               font_settings=font_settings
            )
            
-           output_dir = st.session_state.output_dir
+           # Накладываем дополнительное изображение если есть
+           if overlay_settings and overlay_settings.get('enabled', False) and overlay_image_url:
+               overlay_img = self.image_processor.load_overlay_image(overlay_image_url)
+               if overlay_img:
+                   processed_img = self.image_processor.add_image_overlay(
+                       processed_img,
+                       overlay_img,
+                       overlay_settings,
+                       template_id
+                   )
+           
+           output_dir = st.session_state.get('output_dir', 'output_infographics')
            format_ext = export_settings.get('format', 'PNG').lower()
            filepath = os.path.join(output_dir, f"{filename}.{format_ext}")
            
@@ -509,7 +837,8 @@ class InfographicGenerator:
                    'status': 'success',
                    'filename': filename,
                    'filepath': filepath,
-                   'image_url': image_url
+                   'image_url': image_url,
+                   'overlay_image_url': overlay_image_url
                }
            else:
                return {
@@ -537,11 +866,12 @@ class InfographicGenerator:
            filename = f"item_{index:06d}"
        return filename
 
-   def process_batch(self, df, start_idx, end_idx, column_mapping, template_id, export_settings, processing_settings, text_offsets=None):
-       """Пакетная обработка данных с учетом смещений текста"""
+   def process_batch(self, df, start_idx, end_idx, column_mapping, template_id, export_settings, processing_settings, text_offsets=None, overlay_settings=None, font_settings=None):
+       """Пакетная обработка данных с учетом всех настроек"""
        results = []
        total_rows = end_idx - start_idx + 1
-       os.makedirs(st.session_state.output_dir, exist_ok=True)
+       output_dir = st.session_state.get('output_dir', 'output_infographics')
+       os.makedirs(output_dir, exist_ok=True)
        max_workers = min(processing_settings.get('max_workers', 8), total_rows)
        
        with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -555,7 +885,9 @@ class InfographicGenerator:
                    template_id,
                    export_settings,
                    idx,
-                   text_offsets
+                   text_offsets,
+                   overlay_settings,
+                   font_settings
                )
                futures.append(future)
            
@@ -587,7 +919,8 @@ class InfographicGenerator:
        if not batch_name:
            batch_name = datetime.now().strftime("%Y%m%d_%H%M%S")
        zip_filename = f"infographics_{batch_name}.zip"
-       zip_path = os.path.join(st.session_state.output_dir, zip_filename)
+       output_dir = st.session_state.get('output_dir', 'output_infographics')
+       zip_path = os.path.join(output_dir, zip_filename)
        
        try:
            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -598,7 +931,7 @@ class InfographicGenerator:
                            zipf.write(result['filepath'], arcname)
            
            results_df = pd.DataFrame(results)
-           csv_path = os.path.join(st.session_state.output_dir, f"results_{batch_name}.csv")
+           csv_path = os.path.join(output_dir, f"results_{batch_name}.csv")
            results_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
            
            with zipfile.ZipFile(zip_path, 'a', zipfile.ZIP_DEFLATED) as zipf:
@@ -629,8 +962,8 @@ class UIComponents:
            )
            
            if uploaded_file:
-               if (st.session_state.uploaded_file_name != uploaded_file.name or
-                   st.session_state.df is None):
+               if (st.session_state.get('uploaded_file_name') != uploaded_file.name or
+                   st.session_state.get('df') is None):
                    with st.spinner("Загрузка файла..."):
                        df = ExcelProcessor.read_excel_file(uploaded_file)
                        if df is not None:
@@ -641,7 +974,7 @@ class UIComponents:
                            st.success(f"✅ Загружено {len(df)} строк")
            
            with st.expander("👁️ Предпросмотр данных", expanded=False):
-               if st.session_state.df is not None:
+               if st.session_state.get('df') is not None:
                    preview_rows = st.slider(
                        "Строк для предпросмотра", 
                        5, 50, 10,
@@ -651,12 +984,13 @@ class UIComponents:
            
            st.subheader("🎨 Шаблон инфографики")
            template_options = InfographicTemplates.get_template_names()
+           current_template = st.session_state.get('current_template', 'standard')
            selected_template = st.selectbox(
                "Выберите шаблон",
                options=template_options,
                format_func=lambda x: f"{InfographicTemplates.TEMPLATES[x]['name']} - "
                                    f"{InfographicTemplates.TEMPLATES[x]['description']}",
-               index=template_options.index(st.session_state.current_template),
+               index=template_options.index(current_template) if current_template in template_options else 0,
                key="template_selectbox"
            )
            st.session_state.current_template = selected_template
@@ -672,7 +1006,7 @@ class UIComponents:
                    "Формат",
                    ["PNG", "JPEG", "WebP"],
                    index=["PNG", "JPEG", "WebP"].index(
-                       st.session_state.export_settings['format']
+                       st.session_state.export_settings.get('format', 'PNG')
                    ),
                    key="export_format_selectbox"
                )
@@ -681,14 +1015,14 @@ class UIComponents:
                quality = st.slider(
                    "Качество",
                    50, 100,
-                   st.session_state.export_settings['quality'],
+                   st.session_state.export_settings.get('quality', 85),
                    key="quality_slider"
                )
                st.session_state.export_settings['quality'] = quality
            
            resize_checkbox = st.checkbox(
                "Изменять размер",
-               st.session_state.export_settings['resize'],
+               st.session_state.export_settings.get('resize', True),
                key="resize_checkbox"
            )
            st.session_state.export_settings['resize'] = resize_checkbox
@@ -697,7 +1031,7 @@ class UIComponents:
                target_size = st.number_input(
                    "Целевой размер (px)",
                    500, 4000,
-                   st.session_state.export_settings['target_size'],
+                   st.session_state.export_settings.get('target_size', 1200),
                    key="target_size_number"
                )
                st.session_state.export_settings['target_size'] = target_size
@@ -708,7 +1042,7 @@ class UIComponents:
                batch_size = st.number_input(
                    "Размер партии",
                    1, 10000,
-                   st.session_state.processing_settings['batch_size'],
+                   st.session_state.processing_settings.get('batch_size', 100),
                    key="batch_size_number"
                )
                st.session_state.processing_settings['batch_size'] = batch_size
@@ -716,7 +1050,7 @@ class UIComponents:
                max_workers = st.number_input(
                    "Максимум потоков",
                    1, 32,
-                   st.session_state.processing_settings['max_workers'],
+                   st.session_state.processing_settings.get('max_workers', 8),
                    key="max_workers_number"
                )
                st.session_state.processing_settings['max_workers'] = max_workers
@@ -724,7 +1058,7 @@ class UIComponents:
            timeout_input = st.number_input(
                "Таймаут (сек)",
                5, 60,
-               st.session_state.processing_settings['timeout'],
+               st.session_state.processing_settings.get('timeout', 15),
                key="timeout_number"
            )
            st.session_state.processing_settings['timeout'] = timeout_input
@@ -732,19 +1066,19 @@ class UIComponents:
            retry_count = st.number_input(
                "Повторные попытки",
                0, 5,
-               st.session_state.processing_settings['retry_count'],
+               st.session_state.processing_settings.get('retry_count', 2),
                key="retry_count_number"
            )
            st.session_state.processing_settings['retry_count'] = retry_count
            
            st.divider()
-           st.caption(f"Обработано: {st.session_state.processed_count} изображений")
-           st.caption(f"Версия: 3.0 (Excel)")
+           st.caption(f"Обработано: {st.session_state.get('processed_count', 0)} изображений")
+           st.caption(f"Версия: 4.0 (Расширенная)")
 
    @staticmethod
    def render_column_mapping():
        """Отрисовка настройки маппинга колонок"""
-       if st.session_state.df is not None:
+       if st.session_state.get('df') is not None:
            st.subheader("📊 Настройка маппинга колонок")
            st.info("Выберите, какие колонки из файла соответствуют элементам инфографики")
            
@@ -769,7 +1103,7 @@ class UIComponents:
                    key="top_right_selectbox"
                )
                st.session_state.column_mapping['image_url'] = st.selectbox(
-                   "URL изображений",
+                   "URL основного изображения",
                    available_columns,
                    index=available_columns.index(
                        st.session_state.column_mapping.get('image_url', available_columns[2])
@@ -802,13 +1136,142 @@ class UIComponents:
                    ) if st.session_state.column_mapping.get('filename') in available_columns else 0,
                    key="filename_selectbox"
                )
+           
+           # Дополнительная колонка для изображения наложения
+           st.subheader("🖼️ Изображение для наложения")
+           st.info("Выберите колонку с URL дополнительных изображений (логотипы, стикеры и т.д.)")
+           
+           col1, col2 = st.columns([3, 1])
+           with col1:
+               overlay_image_column = st.selectbox(
+                   "Колонка с изображениями для наложения",
+                   ["Не использовать"] + available_columns,
+                   index=0 if st.session_state.column_mapping.get('overlay_image_url') not in available_columns else 
+                         available_columns.index(st.session_state.column_mapping.get('overlay_image_url')) + 1,
+                   key="overlay_image_selectbox"
+               )
+               
+               if overlay_image_column != "Не использовать":
+                   st.session_state.column_mapping['overlay_image_url'] = overlay_image_column
+               else:
+                   if 'overlay_image_url' in st.session_state.column_mapping:
+                       del st.session_state.column_mapping['overlay_image_url']
+           
+           with col2:
+               st.session_state.image_overlay_settings['enabled'] = st.checkbox(
+                   "Включить наложение",
+                   value=st.session_state.image_overlay_settings.get('enabled', False),
+                   key="enable_overlay_checkbox"
+               )
+   
+   @staticmethod
+   def render_font_settings():
+       """Отрисовка настроек шрифтов"""
+       st.subheader("🔤 Настройки шрифтов")
+       
+       col1, col2 = st.columns(2)
+       
+       with col1:
+           st.markdown("**Загрузка шрифтов**")
+           
+           # Загрузка шрифтов через файл
+           uploaded_fonts = st.file_uploader(
+               "Загрузите файлы шрифтов (.ttf, .otf)",
+               type=['ttf', 'otf', 'TTF', 'OTF'],
+               accept_multiple_files=True,
+               help="Загрузите свои шрифты для использования в инфографике",
+               key="font_uploader"
+           )
+           
+           if uploaded_fonts:
+               for font_file in uploaded_fonts:
+                   font_key, font_name = FontManager.load_font_from_file(font_file)
+                   if font_key:
+                       st.success(f"✅ Шрифт '{font_name}' загружен")
+                   else:
+                       st.error(f"❌ Ошибка загрузки шрифта '{font_file.name}'")
+           
+           # Список загруженных шрифтов
+           if 'uploaded_fonts' in st.session_state and st.session_state.uploaded_fonts:
+               st.markdown("**Загруженные шрифты:**")
+               for font_info in st.session_state.uploaded_fonts:
+                   st.caption(f"📁 {font_info['name']}")
+       
+       with col2:
+           st.markdown("**Выбор шрифтов**")
+           
+           # Получаем список доступных шрифтов
+           available_fonts = FontManager.get_available_fonts()
+           
+           if available_fonts:
+               font_options = [f["name"] for f in available_fonts]
+               font_keys = [f["key"] for f in available_fonts]
+               
+               # Основной шрифт
+               current_main_font = st.session_state.font_settings.get('main_font', 'system_arial')
+               current_main_index = font_keys.index(current_main_font) if current_main_font in font_keys else 0
+               
+               main_font_name = st.selectbox(
+                   "Основной шрифт",
+                   font_options,
+                   index=current_main_index,
+                   key="main_font_selectbox"
+               )
+               
+               if main_font_name:
+                   selected_index = font_options.index(main_font_name)
+                   st.session_state.font_settings['main_font'] = font_keys[selected_index]
+               
+               # Жирный шрифт (опционально)
+               current_bold_font = st.session_state.font_settings.get('bold_font', 'system_arial')
+               current_bold_index = font_keys.index(current_bold_font) if current_bold_font in font_keys else 0
+               
+               bold_font_name = st.selectbox(
+                   "Жирный шрифт (для заголовков)",
+                   ["Тот же что основной"] + font_options,
+                   index=0 if current_bold_font == current_main_font else current_bold_index + 1,
+                   key="bold_font_selectbox"
+               )
+               
+               if bold_font_name == "Тот же что основной":
+                   st.session_state.font_settings['bold_font'] = st.session_state.font_settings['main_font']
+               elif bold_font_name:
+                   selected_index = font_options.index(bold_font_name)
+                   st.session_state.font_settings['bold_font'] = font_keys[selected_index]
+               
+               # Множитель размера шрифта
+               font_size_multiplier = st.slider(
+                   "Множитель размера шрифта",
+                   0.5, 2.0,
+                   st.session_state.font_settings.get('font_size_multiplier', 1.0),
+                   0.1,
+                   key="font_size_multiplier_slider"
+               )
+               st.session_state.font_settings['font_size_multiplier'] = font_size_multiplier
+               
+               st.caption(f"Текущий шрифт: {main_font_name}")
    
    @staticmethod
    def render_text_offset_settings():
        """Отрисовка настроек смещения текста"""
-       if st.session_state.df is not None:
+       if st.session_state.get('df') is not None:
            st.subheader("🎯 Настройки смещения текста")
            st.info("Регулируйте положение текста на изображении")
+           
+           # Кнопка для включения симметричных смещений
+           col1, col2 = st.columns(2)
+           with col1:
+               symmetrical = st.checkbox(
+                   "🔄 Симметричные смещения для всех углов",
+                   value=st.session_state.get('symmetrical_offsets', False),
+                   help="При включении все углы будут иметь одинаковые смещения",
+                   key="symmetrical_offsets_checkbox"
+               )
+               st.session_state.symmetrical_offsets = symmetrical
+           
+           with col2:
+               if symmetrical:
+                   st.info("⚠️ Режим симметричных смещений активен")
            
            # Создаем 4 колонки для настроек смещения
            cols = st.columns(4)
@@ -816,107 +1279,249 @@ class UIComponents:
            # Верхний левый угол
            with cols[0]:
                st.markdown("**↖️ Верхний левый**")
-               x_offset = st.number_input(
-                   "Смещение X (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['top_left']['x_offset'],
-                   key="text_offset_top_left_x"
-               )
-               y_offset = st.number_input(
-                   "Смещение Y (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['top_left']['y_offset'],
-                   key="text_offset_top_left_y"
-               )
-               st.session_state.text_offset_settings['top_left'] = {
-                   'x_offset': x_offset,
-                   'y_offset': y_offset
-               }
+               
+               if not symmetrical:
+                   x_offset = st.number_input(
+                       "Смещение X (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['top_left'].get('x_offset', 0),
+                       key="text_offset_top_left_x"
+                   )
+                   y_offset = st.number_input(
+                       "Смещение Y (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['top_left'].get('y_offset', 0),
+                       key="text_offset_top_left_y"
+                   )
+                   st.session_state.text_offset_settings['top_left'] = {
+                       'x_offset': x_offset,
+                       'y_offset': y_offset
+                   }
+               else:
+                   st.info("Настройки применяются ко всем углам")
            
            # Верхний правый угол
            with cols[1]:
                st.markdown("**↗️ Верхний правый**")
-               x_offset = st.number_input(
-                   "Смещение X (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['top_right']['x_offset'],
-                   key="text_offset_top_right_x"
-               )
-               y_offset = st.number_input(
-                   "Смещение Y (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['top_right']['y_offset'],
-                   key="text_offset_top_right_y"
-               )
-               st.session_state.text_offset_settings['top_right'] = {
-                   'x_offset': x_offset,
-                   'y_offset': y_offset
-               }
+               if not symmetrical:
+                   x_offset = st.number_input(
+                       "Смещение X (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['top_right'].get('x_offset', 0),
+                       key="text_offset_top_right_x"
+                   )
+                   y_offset = st.number_input(
+                       "Смещение Y (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['top_right'].get('y_offset', 0),
+                       key="text_offset_top_right_y"
+                   )
+                   st.session_state.text_offset_settings['top_right'] = {
+                       'x_offset': x_offset,
+                       'y_offset': y_offset
+                   }
+               else:
+                   st.caption(f"X: {st.session_state.text_offset_settings['top_left'].get('x_offset', 0)}%")
+                   st.caption(f"Y: {st.session_state.text_offset_settings['top_left'].get('y_offset', 0)}%")
            
            # Нижний левый угол
            with cols[2]:
                st.markdown("**↙️ Нижний левый**")
-               x_offset = st.number_input(
-                   "Смещение X (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['bottom_left']['x_offset'],
-                   key="text_offset_bottom_left_x"
-               )
-               y_offset = st.number_input(
-                   "Смещение Y (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['bottom_left']['y_offset'],
-                   key="text_offset_bottom_left_y"
-               )
-               st.session_state.text_offset_settings['bottom_left'] = {
-                   'x_offset': x_offset,
-                   'y_offset': y_offset
-               }
+               if not symmetrical:
+                   x_offset = st.number_input(
+                       "Смещение X (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['bottom_left'].get('x_offset', 0),
+                       key="text_offset_bottom_left_x"
+                   )
+                   y_offset = st.number_input(
+                       "Смещение Y (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['bottom_left'].get('y_offset', 0),
+                       key="text_offset_bottom_left_y"
+                   )
+                   st.session_state.text_offset_settings['bottom_left'] = {
+                       'x_offset': x_offset,
+                       'y_offset': y_offset
+                   }
+               else:
+                   st.caption(f"X: {st.session_state.text_offset_settings['top_left'].get('x_offset', 0)}%")
+                   st.caption(f"Y: {st.session_state.text_offset_settings['top_left'].get('y_offset', 0)}%")
            
            # Нижний правый угол
            with cols[3]:
                st.markdown("**↘️ Нижний правый**")
-               x_offset = st.number_input(
-                   "Смещение X (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['bottom_right']['x_offset'],
-                   key="text_offset_bottom_right_x"
-               )
-               y_offset = st.number_input(
-                   "Смещение Y (%)",
-                   -100, 100,
-                   st.session_state.text_offset_settings['bottom_right']['y_offset'],
-                   key="text_offset_bottom_right_y"
-               )
-               st.session_state.text_offset_settings['bottom_right'] = {
-                   'x_offset': x_offset,
-                   'y_offset': y_offset
+               if not symmetrical:
+                   x_offset = st.number_input(
+                       "Смещение X (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['bottom_right'].get('x_offset', 0),
+                       key="text_offset_bottom_right_x"
+                   )
+                   y_offset = st.number_input(
+                       "Смещение Y (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['bottom_right'].get('y_offset', 0),
+                       key="text_offset_bottom_right_y"
+                   )
+                   st.session_state.text_offset_settings['bottom_right'] = {
+                       'x_offset': x_offset,
+                       'y_offset': y_offset
+                   }
+               else:
+                   st.caption(f"X: {st.session_state.text_offset_settings['top_left'].get('x_offset', 0)}%")
+                   st.caption(f"Y: {st.session_state.text_offset_settings['top_left'].get('y_offset', 0)}%")
+           
+           # Если включен режим симметрии, показываем общие контролы
+           if symmetrical:
+               st.markdown("---")
+               st.subheader("🔄 Общие настройки для всех углов")
+               
+               col1, col2 = st.columns(2)
+               with col1:
+                   common_x_offset = st.number_input(
+                       "Общее смещение по X (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['top_left'].get('x_offset', 0),
+                       key="common_x_offset"
+                   )
+               with col2:
+                   common_y_offset = st.number_input(
+                       "Общее смещение по Y (%)",
+                       -100, 100,
+                       st.session_state.text_offset_settings['top_left'].get('y_offset', 0),
+                       key="common_y_offset"
+                   )
+               
+               st.session_state.text_offset_settings = {
+                   'top_left': {'x_offset': common_x_offset, 'y_offset': common_y_offset},
+                   'top_right': {'x_offset': common_x_offset, 'y_offset': common_y_offset},
+                   'bottom_left': {'x_offset': common_x_offset, 'y_offset': common_y_offset},
+                   'bottom_right': {'x_offset': common_x_offset, 'y_offset': common_y_offset}
                }
            
-           # Информация о единицах измерения
            st.caption("💡 Положительные значения смещают текст вправо/вниз, отрицательные - влево/вверх")
            
-           # Кнопка сброса настроек
-           if st.button("🔄 Сбросить смещения", type="secondary", key="reset_offsets_button"):
-               st.session_state.text_offset_settings = {
-                   'top_left': {'x_offset': 0, 'y_offset': 0},
-                   'top_right': {'x_offset': 0, 'y_offset': 0},
-                   'bottom_left': {'x_offset': 0, 'y_offset': 0},
-                   'bottom_right': {'x_offset': 0, 'y_offset': 0}
-               }
-               st.rerun()
+           col1, col2 = st.columns(2)
+           with col1:
+               if st.button("🔄 Сбросить смещения", type="secondary", key="reset_offsets_button"):
+                   st.session_state.text_offset_settings = {
+                       'top_left': {'x_offset': 0, 'y_offset': 0},
+                       'top_right': {'x_offset': 0, 'y_offset': 0},
+                       'bottom_left': {'x_offset': 0, 'y_offset': 0},
+                       'bottom_right': {'x_offset': 0, 'y_offset': 0}
+                   }
+                   st.rerun()
+           
+           with col2:
+               if not symmetrical:
+                   if st.button("📐 Сделать симметричными", type="secondary", key="make_symmetrical_button"):
+                       top_left_settings = st.session_state.text_offset_settings['top_left']
+                       st.session_state.text_offset_settings = {
+                           'top_left': top_left_settings,
+                           'top_right': top_left_settings.copy(),
+                           'bottom_left': top_left_settings.copy(),
+                           'bottom_right': top_left_settings.copy()
+                       }
+                       st.success("✅ Настройки применены ко всем углам!")
+                       st.rerun()
+
+   @staticmethod
+   def render_image_overlay_settings():
+       """Отрисовка настроек наложения изображений"""
+       if st.session_state.get('df') is not None and st.session_state.image_overlay_settings.get('enabled', False):
+           st.subheader("🖼️ Настройки наложения изображений")
+           st.info("Настройте параметры для дополнительных изображений (логотипы, стикеры и т.д.)")
+           
+           template = InfographicTemplates.TEMPLATES[st.session_state.current_template]
+           
+           # Выбор позиции
+           col1, col2 = st.columns(2)
+           with col1:
+               position_options = list(template.get('image_positions', {'center': {"x": 0.5, "y": 0.5, "anchor": "center"}}).keys())
+               current_position = st.session_state.image_overlay_settings.get('position', 'center')
+               position = st.selectbox(
+                   "Позиция на изображении",
+                   position_options,
+                   index=position_options.index(current_position) if current_position in position_options else 0,
+                   key="overlay_position_selectbox"
+               )
+               st.session_state.image_overlay_settings['position'] = position
+           
+           with col2:
+               opacity = st.slider(
+                   "Прозрачность (%)",
+                   0, 100,
+                   st.session_state.image_overlay_settings.get('opacity', 100),
+                   key="overlay_opacity_slider"
+               )
+               st.session_state.image_overlay_settings['opacity'] = opacity
+           
+           # Настройки размера
+           col1, col2 = st.columns(2)
+           with col1:
+               scale = st.slider(
+                   "Масштаб (%)",
+                   10, 200,
+                   st.session_state.image_overlay_settings.get('scale', 100),
+                   key="overlay_scale_slider"
+               )
+               st.session_state.image_overlay_settings['scale'] = scale
+           
+           with col2:
+               max_width = st.slider(
+                   "Макс. ширина (% от основного)",
+                   5, 100,
+                   st.session_state.image_overlay_settings.get('max_width', 50),
+                   key="overlay_max_width_slider"
+               )
+               st.session_state.image_overlay_settings['max_width'] = max_width
+           
+           # Смещения
+           col1, col2 = st.columns(2)
+           with col1:
+               x_offset = st.number_input(
+                   "Смещение по X (%)",
+                   -100, 100,
+                   st.session_state.image_overlay_settings.get('x_offset', 0),
+                   key="overlay_x_offset"
+               )
+               st.session_state.image_overlay_settings['x_offset'] = x_offset
+           
+           with col2:
+               y_offset = st.number_input(
+                   "Смещение по Y (%)",
+                   -100, 100,
+                   st.session_state.image_overlay_settings.get('y_offset', 0),
+                   key="overlay_y_offset"
+               )
+               st.session_state.image_overlay_settings['y_offset'] = y_offset
+           
+           st.caption("💡 Используйте смещения для точной настройки положения изображения")
+           
+           # Предпросмотр позиции
+           if st.checkbox("Показать предпросмотр позиции", value=False, key="show_overlay_preview"):
+               st.info(f"**Позиция:** {position}")
+               st.info(f"**Масштаб:** {scale}%, **Прозрачность:** {opacity}%")
+               st.info(f"**Смещение:** X={x_offset}%, Y={y_offset}%")
 
    @staticmethod
    def render_preview_tab(generator):
        """Отрисовка вкладки предпросмотра"""
-       if st.session_state.df is None:
+       if st.session_state.get('df') is None:
            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
            return
        
        st.header("🎯 Предпросмотр и тестирование")
        
-       # Показываем настройки смещения текста в предпросмотре
+       # Настройки шрифтов
+       UIComponents.render_font_settings()
+       
+       # Настройки смещения текста
        UIComponents.render_text_offset_settings()
+       
+       # Настройки наложения изображений
+       UIComponents.render_image_overlay_settings()
        
        # Выбор строки для теста
        col1, col2, col3 = st.columns([2, 1, 1])
@@ -953,27 +1558,56 @@ class UIComponents:
                
                image_url = str(row.get(st.session_state.column_mapping.get('image_url', ''), ''))
                
+               overlay_image_url = None
+               if 'overlay_image_url' in st.session_state.column_mapping:
+                   overlay_image_url = str(row.get(st.session_state.column_mapping.get('overlay_image_url', ''), ''))
+               
                with st.expander("📋 Исходные данные строки"):
                    col1, col2 = st.columns(2)
                    with col1:
                        st.json(text_data, key="text_data_json")
                    with col2:
-                       st.code(f"URL: {image_url}", key="url_code")
+                       st.code(f"Основное изображение: {image_url}", key="main_url_code")
+                       if overlay_image_url:
+                           st.code(f"Изображение наложения: {overlay_image_url}", key="overlay_url_code")
                
                if image_url and image_url.startswith(('http://', 'https://')):
                    img = generator.image_processor.load_image_from_url(image_url, timeout)
                    
                    if img:
-                       # Показываем текущие настройки смещения
-                       st.info(f"**Применяемые смещения:** {st.session_state.text_offset_settings}")
+                       # Показываем текущие настройки
+                       if st.session_state.get('symmetrical_offsets', False):
+                           st.success(f"**🔄 Симметричные смещения:** X: {st.session_state.text_offset_settings['top_left'].get('x_offset', 0)}%, Y: {st.session_state.text_offset_settings['top_left'].get('y_offset', 0)}%")
+                       else:
+                           st.info(f"**Применяемые смещения текста:** {st.session_state.text_offset_settings}")
                        
-                       # Обрабатываем изображение с учетом смещений
+                       if st.session_state.image_overlay_settings.get('enabled', False):
+                           st.info(f"**Наложение изображений:** Включено, позиция: {st.session_state.image_overlay_settings.get('position', 'center')}")
+                       
+                       # Обрабатываем изображение
                        processed_img = generator.image_processor.add_text_to_image(
                            img.copy(),
                            text_data,
                            st.session_state.current_template,
-                           text_offsets=st.session_state.text_offset_settings
+                           text_offsets=st.session_state.text_offset_settings,
+                           font_settings=st.session_state.font_settings
                        )
+                       
+                       # Накладываем дополнительное изображение если есть
+                       if (st.session_state.image_overlay_settings.get('enabled', False) and 
+                           overlay_image_url and overlay_image_url.startswith(('http://', 'https://', 'data:'))):
+                           
+                           overlay_img = generator.image_processor.load_overlay_image(overlay_image_url)
+                           if overlay_img:
+                               processed_img = generator.image_processor.add_image_overlay(
+                                   processed_img,
+                                   overlay_img,
+                                   st.session_state.image_overlay_settings,
+                                   st.session_state.current_template
+                               )
+                               st.success("✅ Изображение наложения добавлено")
+                           else:
+                               st.warning("⚠️ Не удалось загрузить изображение для наложения")
                        
                        col1, col2 = st.columns(2)
                        with col1:
@@ -992,14 +1626,13 @@ class UIComponents:
                                draw = ImageDraw.Draw(grid_img)
                                template = InfographicTemplates.TEMPLATES[st.session_state.current_template]
                                
-                               for position_key, position_data in template["text_positions"].items():
+                               for position_key, position_data in template.get("text_positions", {}).items():
                                    base_x = position_data["x"] * img.width
                                    base_y = position_data["y"] * img.height
                                    
-                                   # Применяем смещения
                                    if position_key in st.session_state.text_offset_settings:
-                                       offset_x = st.session_state.text_offset_settings[position_key]['x_offset']
-                                       offset_y = st.session_state.text_offset_settings[position_key]['y_offset']
+                                       offset_x = st.session_state.text_offset_settings[position_key].get('x_offset', 0)
+                                       offset_y = st.session_state.text_offset_settings[position_key].get('y_offset', 0)
                                        
                                        if abs(offset_x) <= 100:
                                            base_x += offset_x * img.width / 100
@@ -1014,28 +1647,34 @@ class UIComponents:
                                    x = int(base_x)
                                    y = int(base_y)
                                    
-                                   # Рисуем метку
                                    draw.ellipse([x-5, y-5, x+5, y+5], fill='red')
                                    draw.text((x+10, y-10), position_key, fill='red')
                                
-                               st.image(grid_img, use_column_width=True, caption="Сетка позиций текста")
+                               # Показываем позиции для наложения изображений
+                               for pos_name, pos_data in template.get('image_positions', {}).items():
+                                   x = int(pos_data["x"] * img.width)
+                                   y = int(pos_data["y"] * img.height)
+                                   draw.rectangle([x-10, y-10, x+10, y+10], outline='blue', width=2)
+                                   draw.text((x+15, y-15), pos_name, fill='blue')
+                               
+                               st.image(grid_img, use_column_width=True, caption="Сетка позиций (красный - текст, синий - изображения)")
                        
                        # Кнопка скачивания тестового файла
                        buffered = BytesIO()
-                       format_ext = st.session_state.export_settings['format'].lower()
+                       format_ext = st.session_state.export_settings.get('format', 'PNG').lower()
                        
                        if st.session_state.export_settings['format'] == 'JPEG':
                            processed_img.convert('RGB').save(
                                buffered,
                                format='JPEG',
-                               quality=st.session_state.export_settings['quality']
+                               quality=st.session_state.export_settings.get('quality', 85)
                            )
                            mime_type = 'image/jpeg'
                        elif st.session_state.export_settings['format'] == 'WEBP':
                            processed_img.save(
                                buffered,
                                format='WEBP',
-                               quality=st.session_state.export_settings['quality']
+                               quality=st.session_state.export_settings.get('quality', 85)
                            )
                            mime_type = 'image/webp'
                        else:
@@ -1054,19 +1693,30 @@ class UIComponents:
                    else:
                        st.error("❌ Не удалось загрузить изображение. Проверьте URL.")
                else:
-                   st.warning("⚠️ Некорректный URL изображения")
+                   st.warning("⚠️ Некорректный URL основного изображения")
 
    @staticmethod
    def render_processing_tab(generator):
        """Отрисовка вкладки обработки"""
-       if st.session_state.df is None:
+       if st.session_state.get('df') is None:
            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
            return
        
        st.header("⚡ Массовая обработка")
        
-       # Показываем текущие настройки смещения
-       st.info(f"**Будут применены смещения текста:** {st.session_state.text_offset_settings}")
+       # Показываем текущие настройки
+       if st.session_state.get('symmetrical_offsets', False):
+           st.success(f"**🔄 Будут применены симметричные смещения:** X: {st.session_state.text_offset_settings['top_left'].get('x_offset', 0)}%, Y: {st.session_state.text_offset_settings['top_left'].get('y_offset', 0)}%")
+       else:
+           st.info(f"**Будут применены смещения текста:** {st.session_state.text_offset_settings}")
+       
+       if st.session_state.image_overlay_settings.get('enabled', False):
+           st.info(f"**🖼️ Наложение изображений:** Включено, позиция: {st.session_state.image_overlay_settings.get('position', 'center')}")
+       
+       if st.session_state.font_settings.get('main_font'):
+           available_fonts = FontManager.get_available_fonts()
+           font_name = next((f["name"] for f in available_fonts if f["key"] == st.session_state.font_settings['main_font']), "Системный шрифт")
+           st.info(f"**🔤 Шрифт:** {font_name}, множитель: {st.session_state.font_settings.get('font_size_multiplier', 1.0)}")
        
        total_rows = len(st.session_state.df)
        st.info(f"📊 Готово к обработке: {total_rows} строк")
@@ -1082,7 +1732,7 @@ class UIComponents:
            end_idx = st.number_input(
                "Закончить на строке",
                start_idx, total_rows-1,
-               min(start_idx + st.session_state.processing_settings['batch_size'] - 1, total_rows-1),
+               min(start_idx + st.session_state.processing_settings.get('batch_size', 100) - 1, total_rows-1),
                key="end_idx_number"
            )
        with col3:
@@ -1116,7 +1766,6 @@ class UIComponents:
            st.session_state.status_text = status_text
            
            with st.spinner("Запуск обработки..."):
-               # Передаем настройки смещений в процессор
                results = generator.process_batch(
                    st.session_state.df,
                    start_idx,
@@ -1125,10 +1774,12 @@ class UIComponents:
                    st.session_state.current_template,
                    {
                        **st.session_state.export_settings,
-                       'timeout': st.session_state.processing_settings['timeout']
+                       'timeout': st.session_state.processing_settings.get('timeout', 15)
                    },
                    st.session_state.processing_settings,
-                   text_offsets=st.session_state.text_offset_settings
+                   text_offsets=st.session_state.text_offset_settings,
+                   overlay_settings=st.session_state.image_overlay_settings if st.session_state.image_overlay_settings.get('enabled', False) else None,
+                   font_settings=st.session_state.font_settings
                )
            
            success_count = sum(1 for r in results if r['status'] == 'success')
@@ -1200,15 +1851,15 @@ class UIComponents:
        """Отрисовка вкладки статистики"""
        st.header("📊 Статистика и аналитика")
        
-       if st.session_state.processed_count == 0:
+       if st.session_state.get('processed_count', 0) == 0:
            st.info("📈 Статистика появится после обработки данных")
            return
        
        col1, col2, col3, col4 = st.columns(4)
        with col1:
-           st.metric("Всего обработано", st.session_state.processed_count, key="total_processed_metric")
+           st.metric("Всего обработано", st.session_state.get('processed_count', 0), key="total_processed_metric")
        with col2:
-           if st.session_state.batch_results:
+           if st.session_state.get('batch_results'):
                success_rate = (
                    sum(1 for r in st.session_state.batch_results if r['status'] == 'success') /
                    len(st.session_state.batch_results) * 100
@@ -1219,16 +1870,31 @@ class UIComponents:
                     InfographicTemplates.TEMPLATES[st.session_state.current_template]['name'],
                     key="template_metric")
        with col4:
-           st.metric("Формат экспорта", st.session_state.export_settings['format'], key="format_metric")
+           st.metric("Формат экспорта", st.session_state.export_settings.get('format', 'PNG'), key="format_metric")
        
-       # Показываем текущие настройки смещения
-       show_offset_settings = st.checkbox("Показать настройки смещения текста", value=False, key="show_offset_settings_checkbox")
-       if show_offset_settings:
-           st.subheader("🎯 Текущие настройки смещения")
-           offset_df = pd.DataFrame(st.session_state.text_offset_settings).T
-           st.dataframe(offset_df)
+       # Показываем текущие настройки
+       show_settings = st.checkbox("Показать текущие настройки", value=False, key="show_settings_checkbox")
+       if show_settings:
+           st.subheader("⚙️ Текущие настройки")
+           
+           if st.session_state.get('symmetrical_offsets', False):
+               st.success("🔄 Режим симметричных смещений активен")
+               st.write(f"**Общие смещения:** X: {st.session_state.text_offset_settings['top_left'].get('x_offset', 0)}%, Y: {st.session_state.text_offset_settings['top_left'].get('y_offset', 0)}%")
+           else:
+               offset_df = pd.DataFrame(st.session_state.text_offset_settings).T
+               st.write("**Смещения текста:**")
+               st.dataframe(offset_df)
+           
+           if st.session_state.image_overlay_settings.get('enabled', False):
+               st.write(f"**Наложение изображений:** Включено")
+               st.write(f"Позиция: {st.session_state.image_overlay_settings.get('position', 'center')}, Прозрачность: {st.session_state.image_overlay_settings.get('opacity', 100)}%")
+           
+           if st.session_state.font_settings.get('main_font'):
+               available_fonts = FontManager.get_available_fonts()
+               font_name = next((f["name"] for f in available_fonts if f["key"] == st.session_state.font_settings['main_font']), "Системный шрифт")
+               st.write(f"**Шрифт:** {font_name}, Множитель размера: {st.session_state.font_settings.get('font_size_multiplier', 1.0)}")
        
-       if st.session_state.batch_results:
+       if st.session_state.get('batch_results'):
            st.subheader("📈 Детальная статистика последней обработки")
            results_df = pd.DataFrame(st.session_state.batch_results)
            
@@ -1240,8 +1906,8 @@ class UIComponents:
                with col2:
                    st.dataframe(status_counts, key="status_dataframe")
            
-           if (st.session_state.processing_stats['start_time'] and
-               st.session_state.processing_stats['end_time']):
+           if (st.session_state.processing_stats.get('start_time') and
+               st.session_state.processing_stats.get('end_time')):
                duration = (
                    st.session_state.processing_stats['end_time'] -
                    st.session_state.processing_stats['start_time']
@@ -1256,31 +1922,58 @@ class UIComponents:
        """Отрисовка вкладки инструкций"""
        st.header("📚 Инструкция по использованию")
        
-       with st.expander("🎯 Настройка смещения текста", expanded=True):
+       with st.expander("🔤 Загрузка и настройка шрифтов", expanded=True):
            st.markdown(
                """
-               ### Как работать со смещением текста:
+               ### Как работать с шрифтами:
                
-               #### 📐 Единицы измерения:
-               - **Проценты (%)**: Значения от -100 до 100
-                 - Положительные: вправо/вниз
-                 - Отрицательные: влево/вверх
-               - **Пиксели (px)**: Значения больше 100 по модулю
-                 
-               #### 🎮 Практическое применение:
-               1. **Для точной настройки**: Используйте проценты для адаптации под разные размеры
-               2. **Для фиксированного смещения**: Используйте пиксели (например, 150 вместо 15%)
-               3. **Тестируйте в режиме предпросмотра**: Смотрите изменения в реальном времени
+               #### 📁 Загрузка собственных шрифтов:
+               1. **Поддерживаемые форматы**: .ttf, .otf
+               2. **Нажмите "Загрузите файлы шрифтов"** в настройках шрифтов
+               3. **Выберите файлы** с вашего компьютера
+               4. **Загруженные шрифты** появятся в списке доступных
                
-               #### 📝 Примеры:
-               - `X: 5, Y: 5` → Сместить текст на 5% вправо и вниз
-               - `X: -10, Y: 0` → Сместить текст на 10% влево
-               - `X: 120, Y: -80` → Сместить текст на 120px вправо и 80px вверх
+               #### 🎯 Выбор шрифтов:
+               - **Основной шрифт**: Используется для всего текста
+               - **Жирный шрифт**: Используется для заголовков (можно использовать тот же что основной)
+               - **Множитель размера**: Увеличивает/уменьшает размер всех шрифтов
                
                #### 💡 Советы:
-               - Используйте **сетку позиций** в предпросмотре для точного позиционирования
-               - **Сброс настроек** вернет все значения к 0
-               - Настройки сохраняются между сессиями
+               - Используйте **читаемые шрифты** для лучшего восприятия
+               - **Толстые шрифты** лучше видны на сложном фоне
+               - **Тестируйте** разные шрифты в режиме предпросмотра
+               """
+           )
+       
+       with st.expander("🖼️ Наложение изображений", expanded=True):
+           st.markdown(
+               """
+               ### Как работать с наложением изображений:
+               
+               #### 📊 Подготовка Excel файла:
+               - **Добавьте колонку** с URL дополнительных изображений
+               - **Названия колонок**: лого, logo, бренд, brand, наложение, overlay
+               - **Формат URL**: Прямые ссылки на изображения или base64
+               
+               #### ⚙️ Настройки наложения:
+               1. **Включите наложение** в настройках маппинга
+               2. **Выберите колонку** с изображениями
+               3. **Настройте параметры**:
+                  - **Позиция**: Выберите из доступных позиций шаблона
+                  - **Масштаб**: Размер изображения относительно основного
+                  - **Прозрачность**: Видимость накладываемого изображения
+                  - **Смещения**: Точная настройка положения
+               
+               #### 📝 Примеры использования:
+               - **Логотипы брендов** на товарах
+               - **Стикеры акций** (-50%, NEW, Хит)
+               - **Водяные знаки** для защиты
+               - **Дополнительные элементы** дизайна
+               
+               #### 💡 Советы:
+               - Используйте **PNG с прозрачностью** для лучшего результата
+               - **Тестируйте позиции** в режиме предпросмотра
+               - **Настройте прозрачность** если изображение мешает тексту
                """
            )
        
@@ -1292,65 +1985,20 @@ class UIComponents:
                2. **Первая строка**: должна содержать заголовки колонок
                3. **Обязательные данные**:
                   - Названия товаров
-                  - URL изображений (прямые ссылки)
+                  - URL основного изображения
                   - Цены и характеристики
+                  - (Опционально) URL дополнительных изображений
                ### Рекомендуемая структура:
                ```
-               | Название      | URL картинки                  | Цена     | Характеристики      | Скидка |
-               |---------------|-------------------------------|----------|---------------------|--------|
-               | Смартфон Xiaomi | https://example.com/phone.jpg | 24 999 ₽ | 128GB, 8GB RAM     | -17%   |
-               | Наушники Sony  | https://example.com/hp.jpg    | 8 499 ₽  | Bluetooth 5.0      | -23%   |
+               | Название      | Основное изображение         | Цена     | Логотип            | Характеристики      |
+               |---------------|-------------------------------|----------|---------------------|---------------------|
+               | Смартфон Xiaomi | https://example.com/phone.jpg | 24 999 ₽ | https://example.com/logo.png | 128GB, 8GB RAM     |
+               | Наушники Sony  | https://example.com/hp.jpg    | 8 499 ₽  | https://example.com/brand.png | Bluetooth 5.0      |
                ```
                ### Как получить прямые ссылки на изображения:
                - **Маркетплейсы**: Правая кнопка → "Копировать адрес изображения"
                - **Google Drive**: Измените ссылку на: `https://drive.google.com/uc?id=ID_ФАЙЛА`
                - **Свои изображения**: Загрузите на хостинг изображений
-               """
-           )
-       
-       with st.expander("⚙️ Настройка маппинга колонок", expanded=False):
-           st.markdown(
-               """
-               ### Что такое маппинг колонок?
-               Это соответствие между колонками в вашем Excel файле и элементами инфографики.
-               ### Стандартный маппинг:
-               - **Верхний левый угол** → Название товара
-               - **Верхний правый угол** → Цена
-               - **Нижний левый угол** → Характеристики
-               - **Нижний правый угол** → Скидка или доп. информация
-               - **URL изображений** → Колонка с прямыми ссылками
-               - **Имена файлов** → Колонка для генерации имен файлов
-               ### Советы:
-               1. Используйте кнопку "Автоподбор" для автоматического определения колонок
-               2. Тестируйте маппинг в режиме предпросмотра
-               3. Меняйте колонки для разных типов товаров
-               """
-           )
-       
-       with st.expander("🎨 Выбор шаблона", expanded=False):
-           st.markdown(
-               """
-               ### Доступные шаблоны:
-               1. **📋 Стандартный**
-                  - Для большинства товаров
-                  - Универсальный дизайн
-                  - Хорошая читаемость
-               2. **⭐ Премиум**
-                  - Для люксовых товаров
-                  - Сдержанный дизайн
-                  - Акцент на бренде
-               3. **🔥 Акционный**
-                  - Для распродаж
-                  - Яркие цвета
-                  - Крупный текст
-               4. **📱 Вертикальный**
-                  - Для Instagram Stories
-                  - Вертикальная компоновка
-                  - Мобильная оптимизация
-               ### Как выбрать:
-               1. Протестируйте все шаблоны на разных товарах
-               2. Учитывайте целевую аудиторию
-               3. Следите за читаемостью текста
                """
            )
 
@@ -1361,9 +2009,13 @@ def main():
    """Основная функция приложения"""
    if 'image_cache' not in st.session_state:
        st.session_state['image_cache'] = {}
+   if 'font_cache' not in st.session_state:
+       st.session_state['font_cache'] = {}
+   if 'uploaded_fonts' not in st.session_state:
+       st.session_state['uploaded_fonts'] = []
 
-   st.title("🎯 Генератор Инфографики v3.0")
-   st.markdown("### Автоматическое создание инфографики из Excel файлов")
+   st.title("🎯 Генератор Инфографики v4.0")
+   st.markdown("### Расширенная версия с загрузкой шрифтов и наложением изображений")
    st.markdown("---")
    
    # Инициализация классов
@@ -1374,7 +2026,7 @@ def main():
    ui.render_sidebar()
    
    # Основное содержимое
-   if st.session_state.df is not None:
+   if st.session_state.get('df') is not None:
        # Вкладки
        tab1, tab2, tab3, tab4, tab5 = st.tabs([
            "📊 Настройка",
@@ -1400,8 +2052,14 @@ def main():
                    suffix = st.text_input("Суффикс", value="_promo", key="suffix_text")
                    st.session_state.export_settings['suffix'] = suffix
            
-           # Показываем настройки смещения текста в первой вкладке
+           # Настройки шрифтов
+           ui.render_font_settings()
+           
+           # Настройки смещения текста
            ui.render_text_offset_settings()
+           
+           # Настройки наложения изображений
+           ui.render_image_overlay_settings()
            
            if st.button("🔍 Автоподбор колонок", type="secondary", key="auto_map_button"):
                suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
@@ -1424,36 +2082,41 @@ def main():
        # Экран приветствия
        st.markdown(
            """
-           ## 🚀 Добро пожаловать в Генератор Инфографики!
-           **Превратите ваши Excel данные в профессиональную инфографику за несколько кликов.**
+           ## 🚀 Добро пожаловать в Генератор Инфографики v4.0!
+           **Расширенная версия с новыми возможностями:**
+           - **Загрузка собственных шрифтов**
+           - **Наложение дополнительных изображений**
+           - **Точная настройка всех элементов**
+           
            ### 📋 Как начать:
            1. **Подготовьте Excel файл** с данными о товарах
            2. **Загрузите файл** в боковой панели слева
-           3. **Настройте соответствие** колонок элементам инфографики
-           4. **Выберите шаблон** дизайна
-           5. **Настройте смещение текста** при необходимости
-           6. **Протестируйте** на одном товаре
-           7. **Запустите массовую обработку**
+           3. **Загрузите шрифты** (опционально)
+           4. **Настройте соответствие** колонок элементам инфографики
+           5. **Выберите шаблон** дизайна
+           6. **Настройте все параметры**
+           7. **Протестируйте** на одном товаре
+           8. **Запустите массовую обработку**
            """
        )
        
        # Блок с новыми возможностями
        with st.container():
-           st.markdown("### 🎯 Новые возможности версии 3.0:")
+           st.markdown("### 🎯 Новые возможности версии 4.0:")
            col1, col2 = st.columns(2)
            with col1:
                st.markdown("""
-               - **Точное позиционирование текста**
-               - **Регулировка по осям X и Y**
-               - **Процентные и пиксельные смещения**
-               - **Визуализация позиций**
+               - **Загрузка собственных шрифтов**
+               - **Наложение дополнительных изображений**
+               - **Поддержка форматов TTF и OTF**
+               - **Выбор позиции для изображений**
                """)
            with col2:
                st.markdown("""
-               - **Сохранение настроек**
-               - **Сброс к значениям по умолчанию**
-               - **Предпросмотр изменений в реальном времени**
-               - **Массовая обработка с учетом смещений**
+               - **Настройка прозрачности и масштаба**
+               - **Управление жирностью шрифтов**
+               - **Множитель размера шрифта**
+               - **Поддержка base64 изображений**
                """)
        
        st.markdown(
@@ -1463,13 +2126,17 @@ def main():
            """
        )
        
-       # Пример структуры файла
+       # Пример структуры файла с новыми колонками
        with st.expander("📋 Пример структуры Excel файла"):
            example_data = {
                "Название товара": ["Смартфон Xiaomi Redmi Note 12", "Наушники Sony WH-1000XM5"],
-               "URL изображения": [
+               "Основное изображение": [
                    "https://example.com/xiaomi.jpg",
                    "https://example.com/sony.jpg"
+               ],
+               "Логотип бренда": [
+                   "https://example.com/xiaomi_logo.png",
+                   "https://example.com/sony_logo.png"
                ],
                "Цена": ["24 999 ₽", "34 999 ₽"],
                "Старая цена": ["29 999 ₽", "39 999 ₽"],
@@ -1487,7 +2154,7 @@ def main():
            st.download_button(
                label="📥 Скачать шаблон Excel файла",
                data=buffer.getvalue(),
-               file_name="шаблон_товары.xlsx",
+               file_name="шаблон_товары_v4.xlsx",
                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                key="template_download_button"
            )
@@ -1497,11 +2164,11 @@ def main():
        st.markdown(
            """
            <div style='text-align: center; color: #666; font-size: 0.9em;'>
-               <p>Генератор Инфографики v3.0 | Поддержка Excel файлов |
+               <p>Генератор Инфографики v4.0 | Расширенная версия |
                Обработано изображений: <b>{processed_count}</b></p>
                <p>Для вопросов и предложений: support@example.com</p>
            </div>
-           """.format(processed_count=st.session_state.processed_count), unsafe_allow_html=True
+           """.format(processed_count=st.session_state.get('processed_count', 0)), unsafe_allow_html=True
        )
 
 # ============================
