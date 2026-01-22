@@ -57,7 +57,7 @@ def init_session_state():
         'column_mapping': {},
         'output_dir': 'output_infographics',
         'batch_results': [],
-        'image_cache': {},
+        'image_cache': {},  # Инициализация словаря для кэша изображений
         'preview_image': None,
         'uploaded_file_name': None,
         'export_settings': {
@@ -85,7 +85,6 @@ init_session_state()
 # ============================
 class InfographicTemplates:
     """Класс для управления шаблонами инфографики"""
-    
     TEMPLATES = {
         "standard": {
             "name": "📋 Стандартный",
@@ -328,7 +327,7 @@ class ImageProcessor:
                 img = img.convert('RGB')
                 img.save(filepath, 'JPEG', quality=quality, optimize=True)
             elif format.upper() == 'WEBP':
-                img.save(filepath, 'WEBP', quality=quality, method=6)
+                img.save(filepath, 'WEBP', quality=quality)
             else:  # PNG по умолчанию
                 img.save(filepath, 'PNG', optimize=True)
             
@@ -342,7 +341,6 @@ class ImageProcessor:
 # ============================
 class ExcelProcessor:
     """Класс для обработки Excel файлов"""
-    
     @staticmethod
     def read_excel_file(uploaded_file):
         """Чтение Excel файла с автоматическим определением формата"""
@@ -366,7 +364,6 @@ class ExcelProcessor:
             logger.info(f"Строк: {len(df)}")
             
             return df
-            
         except Exception as e:
             st.error(f"❌ Ошибка чтения файла: {str(e)}")
             logger.error(f"Ошибка чтения Excel: {e}")
@@ -377,12 +374,10 @@ class ExcelProcessor:
         """Валидация структуры DataFrame"""
         if df is None or df.empty:
             return False, "DataFrame пустой или не загружен"
-        
         if required_columns:
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 return False, f"Отсутствуют колонки: {missing_columns}"
-        
         return True, "DataFrame валиден"
     
     @staticmethod
@@ -396,10 +391,7 @@ class ExcelProcessor:
             'image_url': None,
             'filename': None
         }
-        
         column_names = [str(col).lower() for col in df.columns]
-        
-        # Поиск по ключевым словам
         keyword_mapping = {
             'top_left': ['название', 'name', 'товар', 'product', 'title'],
             'top_right': ['цена', 'price', 'стоимость', 'руб'],
@@ -408,18 +400,15 @@ class ExcelProcessor:
             'image_url': ['url', 'ссылка', 'image', 'картинка', 'фото', 'photo'],
             'filename': ['название', 'name', 'артикул', 'sku', 'код']
         }
-        
         for position, keywords in keyword_mapping.items():
             for keyword in keywords:
                 if any(keyword in col for col in column_names):
-                    # Находим оригинальное название колонки
                     for original_col in df.columns:
                         if keyword in str(original_col).lower():
                             suggestions[position] = original_col
                             break
                     if suggestions[position]:
                         break
-        
         return suggestions
 
 # ============================
@@ -427,11 +416,9 @@ class ExcelProcessor:
 # ============================
 class InfographicGenerator:
     """Основной класс для генерации инфографики"""
-    
     def __init__(self):
         self.image_processor = ImageProcessor()
         self.excel_processor = ExcelProcessor()
-    
     def process_single_row(self, row, column_mapping, template_id, 
                           export_settings, row_index=0):
         """Обработка одной строки данных"""
@@ -443,16 +430,13 @@ class InfographicGenerator:
                 'bottom_left': row.get(column_mapping.get('bottom_left'), ''),
                 'bottom_right': row.get(column_mapping.get('bottom_right'), '')
             }
-            
             image_url = row.get(column_mapping.get('image_url'), '')
-            
             # Генерация имени файла
             filename_source = row.get(column_mapping.get('filename'), '')
             if filename_source:
                 filename = self.generate_filename(filename_source, row_index)
             else:
                 filename = f"infographic_{row_index:06d}"
-            
             # Загрузка изображения
             if not image_url or not isinstance(image_url, str):
                 return {
@@ -461,12 +445,10 @@ class InfographicGenerator:
                     'message': 'Некорректный URL изображения',
                     'filename': filename
                 }
-            
             img = self.image_processor.load_image_from_url(
                 image_url, 
                 timeout=export_settings.get('timeout', 15)
             )
-            
             if img is None:
                 return {
                     'row_index': row_index,
@@ -474,33 +456,28 @@ class InfographicGenerator:
                     'message': 'Не удалось загрузить изображение',
                     'filename': filename
                 }
-            
             # Изменение размера
             if export_settings.get('resize', True):
                 img = self.image_processor.resize_image(
                     img, 
                     export_settings.get('target_size', 1200)
                 )
-            
             # Добавление текста
             processed_img = self.image_processor.add_text_to_image(
                 img, 
                 text_data, 
                 template_id
             )
-            
             # Сохранение
             output_dir = st.session_state.output_dir
             format_ext = export_settings.get('format', 'PNG').lower()
             filepath = os.path.join(output_dir, f"{filename}.{format_ext}")
-            
             success = self.image_processor.save_image(
                 processed_img,
                 filepath,
                 format=export_settings.get('format', 'PNG'),
                 quality=export_settings.get('quality', 85)
             )
-            
             if success:
                 return {
                     'row_index': row_index,
@@ -516,7 +493,6 @@ class InfographicGenerator:
                     'message': 'Ошибка сохранения файла',
                     'filename': filename
                 }
-                
         except Exception as e:
             logger.error(f"Ошибка обработки строки {row_index}: {e}")
             return {
@@ -525,40 +501,24 @@ class InfographicGenerator:
                 'message': str(e),
                 'filename': f"row_{row_index}"
             }
-    
     def generate_filename(self, source, index):
         """Генерация имени файла из исходной строки"""
-        # Удаляем запрещенные символы
         filename = re.sub(r'[<>:"/\\|?*]', '', str(source))
-        
-        # Заменяем пробелы на подчеркивания
         filename = filename.replace(' ', '_')
-        
-        # Ограничиваем длину
         if len(filename) > 100:
             filename = filename[:100]
-        
-        # Добавляем индекс если имя пустое
         if not filename:
             filename = f"item_{index:06d}"
-        
         return filename
-    
     def process_batch(self, df, start_idx, end_idx, column_mapping, 
                      template_id, export_settings, processing_settings):
         """Пакетная обработка данных"""
         results = []
         total_rows = end_idx - start_idx + 1
-        
-        # Создаем директорию для результатов
         os.makedirs(st.session_state.output_dir, exist_ok=True)
-        
-        # Используем ThreadPoolExecutor для параллельной обработки
         max_workers = min(processing_settings.get('max_workers', 8), total_rows)
-        
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
-            
             for idx in range(start_idx, end_idx + 1):
                 row = df.iloc[idx]
                 future = executor.submit(
@@ -570,30 +530,20 @@ class InfographicGenerator:
                     idx
                 )
                 futures.append(future)
-            
-            # Собираем результаты
             completed = 0
             for future in as_completed(futures):
                 try:
                     result = future.result()
                     results.append(result)
-                    
                     completed += 1
                     progress = completed / total_rows
-                    
-                    # Обновляем прогресс бар
                     if 'progress_bar' in st.session_state:
                         st.session_state.progress_bar.progress(progress)
-                    
-                    # Обновляем статус
                     if 'status_text' in st.session_state:
                         success_count = sum(1 for r in results if r['status'] == 'success')
                         st.session_state.status_text.text(
-                            f"Обработано: {completed}/{total_rows} | "
-                            f"Успешно: {success_count} | "
-                            f"Ошибок: {completed - success_count}"
+                            f"Обработано: {completed}/{total_rows} | Успешно: {success_count} | Ошибок: {completed - success_count}"
                         )
-                        
                 except Exception as e:
                     logger.error(f"Ошибка в потоке обработки: {e}")
                     results.append({
@@ -601,17 +551,13 @@ class InfographicGenerator:
                         'status': 'error',
                         'message': str(e)
                     })
-        
         return results
-    
     def create_zip_archive(self, results, batch_name=None):
         """Создание ZIP архива с результатами"""
         if not batch_name:
             batch_name = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
         zip_filename = f"infographics_{batch_name}.zip"
         zip_path = os.path.join(st.session_state.output_dir, zip_filename)
-        
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for result in results:
@@ -619,18 +565,14 @@ class InfographicGenerator:
                         if os.path.exists(result['filepath']):
                             arcname = os.path.basename(result['filepath'])
                             zipf.write(result['filepath'], arcname)
-            
             # Создаем CSV с результатами
             results_df = pd.DataFrame(results)
             csv_path = os.path.join(st.session_state.output_dir, f"results_{batch_name}.csv")
             results_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-            
             # Добавляем CSV в архив
             with zipfile.ZipFile(zip_path, 'a', zipfile.ZIP_DEFLATED) as zipf:
                 zipf.write(csv_path, os.path.basename(csv_path))
-            
             return zip_path, csv_path
-            
         except Exception as e:
             logger.error(f"Ошибка создания ZIP архива: {e}")
             return None, None
@@ -640,13 +582,11 @@ class InfographicGenerator:
 # ============================
 class UIComponents:
     """Класс для компонентов пользовательского интерфейса"""
-    
     @staticmethod
     def render_sidebar():
         """Отрисовка боковой панели"""
         with st.sidebar:
             st.title("⚙️ Настройки")
-            
             # Загрузка файла
             st.subheader("📁 Загрузка данных")
             uploaded_file = st.file_uploader(
@@ -654,33 +594,26 @@ class UIComponents:
                 type=['xlsx', 'xls'],
                 help="Файл должен содержать данные о товарах"
             )
-            
             if uploaded_file:
                 if (st.session_state.uploaded_file_name != uploaded_file.name or 
                     st.session_state.df is None):
-                    
                     with st.spinner("Загрузка файла..."):
                         df = ExcelProcessor.read_excel_file(uploaded_file)
                         if df is not None:
                             st.session_state.df = df
                             st.session_state.uploaded_file_name = uploaded_file.name
-                            
                             # Автоматическое предложение колонок
                             suggestions = ExcelProcessor.get_column_suggestions(df)
                             st.session_state.column_mapping = suggestions
-                            
                             st.success(f"✅ Загружено {len(df)} строк")
-                
                 # Предпросмотр данных
                 with st.expander("👁️ Предпросмотр данных", expanded=False):
                     if st.session_state.df is not None:
                         preview_rows = st.slider("Строк для предпросмотра", 5, 50, 10)
                         st.dataframe(st.session_state.df.head(preview_rows))
-            
             # Выбор шаблона
             st.subheader("🎨 Шаблон инфографики")
             template_options = InfographicTemplates.get_template_names()
-            
             selected_template = st.selectbox(
                 "Выберите шаблон",
                 options=template_options,
@@ -689,15 +622,12 @@ class UIComponents:
                 index=template_options.index(st.session_state.current_template)
             )
             st.session_state.current_template = selected_template
-            
             # Превью шаблона
             template = InfographicTemplates.TEMPLATES[selected_template]
             st.caption(f"**Тип:** {template['name']}")
             st.caption(f"**Описание:** {template['description']}")
-            
             # Настройки экспорта
             st.subheader("💾 Настройки экспорта")
-            
             col1, col2 = st.columns(2)
             with col1:
                 export_format = st.selectbox(
@@ -708,7 +638,6 @@ class UIComponents:
                     )
                 )
                 st.session_state.export_settings['format'] = export_format
-            
             with col2:
                 quality = st.slider(
                     "Качество",
@@ -716,12 +645,10 @@ class UIComponents:
                     st.session_state.export_settings['quality']
                 )
                 st.session_state.export_settings['quality'] = quality
-            
             st.session_state.export_settings['resize'] = st.checkbox(
                 "Изменять размер", 
                 st.session_state.export_settings['resize']
             )
-            
             if st.session_state.export_settings['resize']:
                 target_size = st.number_input(
                     "Целевой размер (px)",
@@ -729,10 +656,8 @@ class UIComponents:
                     st.session_state.export_settings['target_size']
                 )
                 st.session_state.export_settings['target_size'] = target_size
-            
             # Настройки обработки
             st.subheader("⚡ Настройки обработки")
-            
             col1, col2 = st.columns(2)
             with col1:
                 batch_size = st.number_input(
@@ -741,7 +666,6 @@ class UIComponents:
                     st.session_state.processing_settings['batch_size']
                 )
                 st.session_state.processing_settings['batch_size'] = batch_size
-            
             with col2:
                 max_workers = st.number_input(
                     "Максимум потоков",
@@ -749,36 +673,30 @@ class UIComponents:
                     st.session_state.processing_settings['max_workers']
                 )
                 st.session_state.processing_settings['max_workers'] = max_workers
-            
             st.session_state.processing_settings['timeout'] = st.number_input(
                 "Таймаут (сек)",
                 5, 60,
                 st.session_state.processing_settings['timeout']
             )
-            
             st.session_state.processing_settings['retry_count'] = st.number_input(
                 "Повторные попытки",
                 0, 5,
                 st.session_state.processing_settings['retry_count']
             )
-            
             # Информация о системе
             st.divider()
             st.caption(f"Обработано: {st.session_state.processed_count} изображений")
             st.caption(f"Версия: 3.0 (Excel)")
-    
+
     @staticmethod
     def render_column_mapping():
         """Отрисовка настройки маппинга колонок"""
         if st.session_state.df is not None:
             st.subheader("📊 Настройка маппинга колонок")
             st.info("Выберите, какие колонки из файла соответствуют элементам инфографики")
-            
             available_columns = st.session_state.df.columns.tolist()
-            
             # Создаем колонки для выбора
             col1, col2 = st.columns(2)
-            
             with col1:
                 st.session_state.column_mapping['top_left'] = st.selectbox(
                     "Верхний левый угол (Название)",
@@ -787,7 +705,6 @@ class UIComponents:
                         st.session_state.column_mapping.get('top_left', available_columns[0])
                     ) if st.session_state.column_mapping.get('top_left') in available_columns else 0
                 )
-                
                 st.session_state.column_mapping['top_right'] = st.selectbox(
                     "Верхний правый угол (Цена)",
                     available_columns,
@@ -795,7 +712,6 @@ class UIComponents:
                         st.session_state.column_mapping.get('top_right', available_columns[1])
                     ) if st.session_state.column_mapping.get('top_right') in available_columns and len(available_columns) > 1 else min(1, len(available_columns)-1)
                 )
-                
                 st.session_state.column_mapping['image_url'] = st.selectbox(
                     "URL изображений",
                     available_columns,
@@ -803,7 +719,6 @@ class UIComponents:
                         st.session_state.column_mapping.get('image_url', available_columns[2])
                     ) if st.session_state.column_mapping.get('image_url') in available_columns and len(available_columns) > 2 else min(2, len(available_columns)-1)
                 )
-            
             with col2:
                 st.session_state.column_mapping['bottom_left'] = st.selectbox(
                     "Нижний левый угол (Характеристики)",
@@ -812,7 +727,6 @@ class UIComponents:
                         st.session_state.column_mapping.get('bottom_left', available_columns[3])
                     ) if st.session_state.column_mapping.get('bottom_left') in available_columns and len(available_columns) > 3 else min(3, len(available_columns)-1)
                 )
-                
                 st.session_state.column_mapping['bottom_right'] = st.selectbox(
                     "Нижний правый угол (Скидка/Детали)",
                     available_columns,
@@ -820,7 +734,6 @@ class UIComponents:
                         st.session_state.column_mapping.get('bottom_right', available_columns[4])
                     ) if st.session_state.column_mapping.get('bottom_right') in available_columns and len(available_columns) > 4 else min(4, len(available_columns)-1)
                 )
-                
                 st.session_state.column_mapping['filename'] = st.selectbox(
                     "Имена файлов (источник)",
                     available_columns,
@@ -828,19 +741,16 @@ class UIComponents:
                         st.session_state.column_mapping.get('filename', available_columns[0])
                     ) if st.session_state.column_mapping.get('filename') in available_columns else 0
                 )
-    
+
     @staticmethod
     def render_preview_tab(generator):
         """Отрисовка вкладки предпросмотра"""
         if st.session_state.df is None:
             st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
             return
-        
         st.header("🎯 Предпросмотр и тестирование")
-        
         # Выбор строки для теста
         col1, col2, col3 = st.columns([2, 1, 1])
-        
         with col1:
             test_row_idx = st.number_input(
                 "Номер строки для тестирования",
@@ -848,23 +758,19 @@ class UIComponents:
                 max_value=len(st.session_state.df)-1,
                 value=0
             )
-        
         with col2:
             timeout = st.number_input(
                 "Таймаут (сек)",
                 5, 60,
                 st.session_state.export_settings.get('timeout', 15)
             )
-        
         with col3:
             st.write("")  # Пустое место для выравнивания
             st.write("")
             test_button = st.button("🚀 Запустить тест", type="primary")
-        
         if test_button and test_row_idx < len(st.session_state.df):
             with st.spinner("Выполнение теста..."):
                 row = st.session_state.df.iloc[test_row_idx]
-                
                 # Формируем текстовые данные
                 text_data = {
                     'top_left': str(row.get(st.session_state.column_mapping.get('top_left', ''), '')),
@@ -872,9 +778,7 @@ class UIComponents:
                     'bottom_left': str(row.get(st.session_state.column_mapping.get('bottom_left', ''), '')),
                     'bottom_right': str(row.get(st.session_state.column_mapping.get('bottom_right', ''), ''))
                 }
-                
                 image_url = str(row.get(st.session_state.column_mapping.get('image_url', ''), ''))
-                
                 # Показываем исходные данные
                 with st.expander("📋 Исходные данные строки"):
                     col1, col2 = st.columns(2)
@@ -882,11 +786,9 @@ class UIComponents:
                         st.json(text_data)
                     with col2:
                         st.code(f"URL: {image_url}")
-                
                 if image_url and image_url.startswith(('http://', 'https://')):
                     # Загружаем изображение
                     img = generator.image_processor.load_image_from_url(image_url, timeout)
-                    
                     if img:
                         # Обрабатываем изображение
                         processed_img = generator.image_processor.add_text_to_image(
@@ -894,24 +796,19 @@ class UIComponents:
                             text_data,
                             st.session_state.current_template
                         )
-                        
                         # Показываем результат
                         col1, col2 = st.columns(2)
-                        
                         with col1:
                             st.subheader("📷 Оригинал")
                             st.image(img, use_column_width=True)
                             st.caption(f"Размер: {img.width}×{img.height}")
-                        
                         with col2:
                             st.subheader("🎨 С инфографикой")
                             st.image(processed_img, use_column_width=True)
                             st.caption(f"Шаблон: {st.session_state.current_template}")
-                        
                         # Кнопка скачивания тестового файла
                         buffered = BytesIO()
                         format_ext = st.session_state.export_settings['format'].lower()
-                        
                         if st.session_state.export_settings['format'] == 'JPEG':
                             processed_img.convert('RGB').save(
                                 buffered, 
@@ -929,60 +826,49 @@ class UIComponents:
                         else:
                             processed_img.save(buffered, format='PNG')
                             mime_type = 'image/png'
-                        
                         st.download_button(
                             label="💾 Скачать тестовое изображение",
                             data=buffered.getvalue(),
                             file_name=f"test_preview.{format_ext}",
                             mime=mime_type
                         )
-                        
                         # Сохраняем для возможного повторного использования
                         st.session_state.preview_image = processed_img
-                        
                     else:
                         st.error("❌ Не удалось загрузить изображение. Проверьте URL.")
                 else:
                     st.warning("⚠️ Некорректный URL изображения")
-    
+
     @staticmethod
     def render_processing_tab(generator):
         """Отрисовка вкладки обработки"""
         if st.session_state.df is None:
             st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
             return
-        
         st.header("⚡ Массовая обработка")
-        
         total_rows = len(st.session_state.df)
         st.info(f"📊 Готово к обработке: {total_rows} строк")
-        
         # Настройки обработки
         col1, col2, col3 = st.columns(3)
-        
         with col1:
             start_idx = st.number_input(
                 "Начать с строки",
                 0, total_rows-1, 0
             )
-        
         with col2:
             end_idx = st.number_input(
                 "Закончить на строке",
                 start_idx, total_rows-1,
                 min(start_idx + st.session_state.processing_settings['batch_size'] - 1, total_rows-1)
             )
-        
         with col3:
             st.write("")
             st.write("")
             process_button = st.button("🔄 Начать обработку", type="primary", use_container_width=True)
-        
         # Информация о партии
         batch_size = end_idx - start_idx + 1
         if batch_size > 0:
             st.success(f"✅ Будет обработано: {batch_size} строк")
-        
         # Обработка
         if process_button and batch_size > 0:
             # Сброс статистики
@@ -993,15 +879,12 @@ class UIComponents:
                 'start_time': datetime.now(),
                 'end_time': None
             }
-            
             # Создаем элементы интерфейса для прогресса
             progress_bar = st.progress(0)
             status_text = st.empty()
             results_placeholder = st.empty()
-            
             st.session_state.progress_bar = progress_bar
             st.session_state.status_text = status_text
-            
             # Запускаем обработку
             with st.spinner("Запуск обработки..."):
                 results = generator.process_batch(
@@ -1016,24 +899,19 @@ class UIComponents:
                     },
                     st.session_state.processing_settings
                 )
-            
             # Обновляем статистику
             success_count = sum(1 for r in results if r['status'] == 'success')
             failed_count = len(results) - success_count
-            
             st.session_state.processing_stats.update({
                 'success': success_count,
                 'failed': failed_count,
                 'end_time': datetime.now()
             })
-            
             st.session_state.processed_count += success_count
             st.session_state.batch_results = results
-            
             # Показываем результаты
             with results_placeholder.container():
                 st.success(f"✅ Обработка завершена!")
-                
                 # Сводка
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -1041,30 +919,25 @@ class UIComponents:
                 with col2:
                     st.metric("С ошибками", failed_count)
                 with col3:
-                    if st.session_state.processing_stats['start_time'] and \
-                       st.session_state.processing_stats['end_time']:
+                    if st.session_state.processing_stats['start_time'] and st.session_state.processing_stats['end_time']:
                         duration = (
                             st.session_state.processing_stats['end_time'] - 
                             st.session_state.processing_stats['start_time']
                         ).total_seconds()
                         st.metric("Время", f"{duration:.1f} сек")
-                
                 # Детали ошибок
                 if failed_count > 0:
                     with st.expander("📋 Детали ошибок"):
                         error_results = [r for r in results if r['status'] == 'error']
                         error_df = pd.DataFrame(error_results)
                         st.dataframe(error_df[['row_index', 'message']])
-                
                 # Создание архива
                 if success_count > 0:
                     with st.spinner("Создание архива..."):
                         zip_path, csv_path = generator.create_zip_archive(results)
-                        
                         if zip_path and os.path.exists(zip_path):
                             # Кнопки скачивания
                             col1, col2 = st.columns(2)
-                            
                             with col1:
                                 with open(zip_path, 'rb') as f:
                                     st.download_button(
@@ -1074,7 +947,6 @@ class UIComponents:
                                         mime="application/zip",
                                         use_container_width=True
                                     )
-                            
                             with col2:
                                 with open(csv_path, 'rb') as f:
                                     st.download_button(
@@ -1084,26 +956,21 @@ class UIComponents:
                                         mime="text/csv",
                                         use_container_width=True
                                     )
-                            
                             # Информация о файлах
                             zip_size = os.path.getsize(zip_path) / (1024 * 1024)
                             st.info(f"Размер архива: {zip_size:.2f} MB")
-    
+
     @staticmethod
     def render_statistics_tab():
         """Отрисовка вкладки статистики"""
         st.header("📊 Статистика и аналитика")
-        
         if st.session_state.processed_count == 0:
             st.info("📈 Статистика появится после обработки данных")
             return
-        
         # Основные метрики
         col1, col2, col3, col4 = st.columns(4)
-        
         with col1:
             st.metric("Всего обработано", st.session_state.processed_count)
-        
         with col2:
             if st.session_state.batch_results:
                 success_rate = (
@@ -1111,62 +978,45 @@ class UIComponents:
                     len(st.session_state.batch_results) * 100
                 )
                 st.metric("Успешность", f"{success_rate:.1f}%")
-        
         with col3:
             st.metric("Текущий шаблон", 
                      InfographicTemplates.TEMPLATES[st.session_state.current_template]['name'])
-        
         with col4:
             st.metric("Формат экспорта", st.session_state.export_settings['format'])
-        
         # Графики и детальная статистика
         if st.session_state.batch_results:
             st.subheader("📈 Детальная статистика последней обработки")
-            
-            # Конвертируем в DataFrame
             results_df = pd.DataFrame(st.session_state.batch_results)
-            
-            # Группировка по статусам
             if 'status' in results_df.columns:
                 status_counts = results_df['status'].value_counts()
-                
                 col1, col2 = st.columns(2)
-                
                 with col1:
                     st.bar_chart(status_counts)
-                
                 with col2:
                     st.dataframe(status_counts)
-            
-            # Время обработки
             if (st.session_state.processing_stats['start_time'] and 
                 st.session_state.processing_stats['end_time']):
-                
                 duration = (
                     st.session_state.processing_stats['end_time'] - 
                     st.session_state.processing_stats['start_time']
                 ).total_seconds()
-                
                 if duration > 0 and len(results_df) > 0:
                     speed = len(results_df) / duration
                     st.metric("Скорость обработки", f"{speed:.2f} изобр/сек")
-    
+
     @staticmethod
     def render_instructions_tab():
         """Отрисовка вкладки инструкций"""
         st.header("📚 Инструкция по использованию")
-        
         with st.expander("📊 Подготовка Excel файла", expanded=True):
             st.markdown("""
             ### Требования к Excel файлу:
-            
             1. **Формат файла**: .xlsx или .xls
             2. **Первая строка**: должна содержать заголовки колонок
             3. **Обязательные данные**:
                - Названия товаров
                - URL изображений (прямые ссылки)
                - Цены и характеристики
-            
             ### Рекомендуемая структура:
             ```
             | Название      | URL картинки                  | Цена     | Характеристики      | Скидка |
@@ -1174,18 +1024,15 @@ class UIComponents:
             | Смартфон Xiaomi | https://example.com/phone.jpg | 24 999 ₽ | 128GB, 8GB RAM     | -17%   |
             | Наушники Sony  | https://example.com/hp.jpg    | 8 499 ₽  | Bluetooth 5.0      | -23%   |
             ```
-            
             ### Как получить прямые ссылки на изображения:
             - **Маркетплейсы**: Правая кнопка → "Копировать адрес изображения"
             - **Google Drive**: Измените ссылку на: `https://drive.google.com/uc?id=ID_ФАЙЛА`
             - **Свои изображения**: Загрузите на хостинг изображений
             """)
-        
         with st.expander("⚙️ Настройка маппинга колонок"):
             st.markdown("""
             ### Что такое маппинг колонок?
             Это соответствие между колонками в вашем Excel файле и элементами инфографики.
-            
             ### Стандартный маппинг:
             - **Верхний левый угол** → Название товара
             - **Верхний правый угол** → Цена
@@ -1193,102 +1040,83 @@ class UIComponents:
             - **Нижний правый угол** → Скидка или доп. информация
             - **URL изображений** → Колонка с прямыми ссылками
             - **Имена файлов** → Колонка для генерации имен файлов
-            
             ### Советы:
             1. Используйте кнопку "Автоподбор" для автоматического определения колонок
             2. Тестируйте маппинг в режиме предпросмотра
             3. Меняйте колонки для разных типов товаров
             """)
-        
         with st.expander("🎨 Выбор шаблона"):
             st.markdown("""
             ### Доступные шаблоны:
-            
             1. **📋 Стандартный** 
                - Для большинства товаров
                - Универсальный дизайн
                - Хорошая читаемость
-            
             2. **⭐ Премиум**
                - Для люксовых товаров
                - Сдержанный дизайн
                - Акцент на бренде
-            
             3. **🔥 Акционный**
                - Для распродаж
                - Яркие цвета
                - Крупный текст
-            
             4. **📱 Вертикальный**
                - Для Instagram Stories
                - Вертикальная компоновка
                - Мобильная оптимизация
-            
             ### Как выбрать:
             1. Протестируйте все шаблоны на разных товарах
             2. Учитывайте целевую аудиторию
             3. Следите за читаемостью текста
             """)
-        
         with st.expander("⚡ Оптимизация скорости обработки"):
             st.markdown("""
             ### Рекомендации по настройкам:
-            
             | Объем | Потоки | Размер партии | Таймаут |
             |-------|--------|---------------|---------|
             | До 100 | 4-8    | 50            | 15 сек  |
             | 100-1000 | 8-16  | 100-200       | 15 сек  |
             | 1000+ | 16-32   | 200-500       | 10 сек  |
-            
             ### Что делать при ошибках:
             1. **Медленная загрузка** → Увеличьте таймаут
             2. **Ошибки памяти** → Уменьшите размер партии
             3. **Блокировка запросов** → Уменьшите количество потоков
             4. **Плохое качество** → Увеличьте качество экспорта
-            
             ### Оптимальные настройки экспорта:
             - **Для сайтов**: JPEG, качество 85%, размер 1200px
             - **Для соцсетей**: PNG или WebP, качество 90%
             - **Для печати**: PNG, качество 100%, размер 3000px
             """)
-        
         with st.expander("❌ Решение проблем"):
             st.markdown("""
             ### Частые проблемы и решения:
-            
             1. **Не загружается Excel файл**
                - Проверьте формат (.xlsx или .xls)
                - Убедитесь, что файл не поврежден
                - Попробуйте сохранить файл заново
-            
             2. **Не загружаются изображения**
                - Проверьте URL в браузере
                - Убедитесь, что ссылки прямые
                - Для Google Drive используйте правильный формат ссылки
-            
             3. **Текст не виден на изображении**
                - Выберите другой шаблон
                - Уменьшите длину текста
                - Проверьте контрастность в предпросмотре
-            
             4. **Медленная обработка**
                - Уменьшите количество потоков
                - Уменьшите размер партии
                - Проверьте скорость интернета
-            
             5. **Ошибки памяти**
                - Закройте другие приложения
                - Уменьшите размер партии
                - Уменьшите целевую размер изображений
-            """)
+            "")
 
 # ============================
 # ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
 # ============================
 def main():
     """Основная функция приложения"""
-    
-    # Заголовок приложения
     st.title("🎯 Генератор Инфографики v3.0")
     st.markdown("### Автоматическое создание инфографики из Excel файлов")
     st.markdown("---")
@@ -1313,23 +1141,19 @@ def main():
         
         with tab1:
             ui.render_column_mapping()
-            
             # Дополнительные настройки имен файлов
             st.subheader("🏷️ Настройка имен файлов")
             col1, col2 = st.columns(2)
-            
             with col1:
                 add_prefix = st.checkbox("Добавить префикс", value=False)
                 if add_prefix:
                     prefix = st.text_input("Префикс", value="product_")
                     st.session_state.export_settings['prefix'] = prefix
-            
             with col2:
                 add_suffix = st.checkbox("Добавить суффикс", value=False)
                 if add_suffix:
                     suffix = st.text_input("Суффикс", value="_promo")
                     st.session_state.export_settings['suffix'] = suffix
-            
             # Автоподбор колонок
             if st.button("🔍 Автоподбор колонок", type="secondary"):
                 suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
@@ -1348,25 +1172,19 @@ def main():
         
         with tab5:
             ui.render_instructions_tab()
-    
     else:
         # Экран приветствия
         st.markdown("""
         ## 🚀 Добро пожаловать в Генератор Инфографики!
-        
         **Превратите ваши Excel данные в профессиональную инфографику за несколько кликов.**
-        
         ### 📋 Как начать:
-        
         1. **Подготовьте Excel файл** с данными о товарах
         2. **Загрузите файл** в боковой панели слева
         3. **Настройте соответствие** колонок элементам инфографики
         4. **Выберите шаблон** дизайна
         5. **Протестируйте** на одном товаре
         6. **Запустите массовую обработку**
-        
         ### ⚡ Основные возможности:
-        
         - ✅ **Поддержка Excel** (.xlsx, .xls)
         - ✅ **4 готовых шаблона** дизайна
         - ✅ **Автоподбор** колонок
@@ -1374,20 +1192,15 @@ def main():
         - ✅ **Экспорт** в PNG, JPEG, WebP
         - ✅ **Автоматическое создание ZIP** архива
         - ✅ **Подробная статистика** обработки
-        
         ### 🎯 Идеально для:
-        
         - 🛍️ **Интернет-магазины** - карточки товаров
         - 📱 **Соцсети** - посты для Instagram, Facebook
         - 📊 **Маркетплейсы** - Yandex Market, Ozon, Wildberries
         - 🏢 **B2B компании** - каталоги продукции
         - 🏷️ **Распродажи** - акционные баннеры
-        
-        ---
-        
+        ---        
         **📁 Подготовьте ваш Excel файл и начните создавать профессиональную инфографику уже сегодня!**
         """)
-        
         # Пример структуры файла
         with st.expander("📋 Пример структуры Excel файла"):
             example_data = {
@@ -1402,31 +1215,29 @@ def main():
                 "Скидка": ["-17%", "-13%"],
                 "Доставка": ["Бесплатно", "1-2 дня"]
             }
-            
             example_df = pd.DataFrame(example_data)
             st.dataframe(example_df, use_container_width=True)
-            
             # Кнопка для скачивания шаблона
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 example_df.to_excel(writer, index=False, sheet_name='Товары')
-            
             st.download_button(
                 label="📥 Скачать шаблон Excel файла",
                 data=buffer.getvalue(),
                 file_name="шаблон_товары.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-    
     # Футер
     st.markdown("---")
-    st.markdown("""
+    st.markdown(
+        """
     <div style='text-align: center; color: #666; font-size: 0.9em;'>
         <p>Генератор Инфографики v3.0 | Поддержка Excel файлов | 
         Обработано изображений: <b>{processed_count}</b></p>
         <p>Для вопросов и предложений: support@example.com</p>
     </div>
-    """.format(processed_count=st.session_state.processed_count), unsafe_allow_html=True)
+    """.format(processed_count=st.session_state.processed_count), unsafe_allow_html=True
+    )
 
 # ============================
 # ЗАПУСК ПРИЛОЖЕНИЯ
