@@ -1,1087 +1,1440 @@
-#!/usr/bin/env python3
-import io
-import os
-import json
-import tempfile
-from typing import Dict
-
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter, ImageOps
+import requests
+from io import BytesIO
+import time
+import os
+import base64
+from datetime import datetime
+import zipfile
+import json
+import logging
+import sys
 import re
-
-# Константы
-ADDITIONS_FILE = "additional_brands.json"
-
-# Начальный словарь брендов (обязательно вставьте весь ваш словарь сюда)
-car_brands_models = {
-    "Acura": "Акура",
-"Integra": "Интегра",
-"MDX": "МДХ",
-"RDX": "РДХ",
-"RSX": "РСХ",
-"TLX": "ТЛКС",
-
-# Alfa Romeo
-"4C": "4C",
-"Alfa Romeo": "Альфа Ромео",
-"Giulia": "Джулия",
-"Stelvio": "Стельвио",
-"Tonale": "Тонале",
-
-# Audi
-"A1": "А1",
-"A3": "А3",
-"A4": "А4",
-"A5": "А 5",
-"A6": "А6",
-"A7": "А 7",
-"A8": "А8",
-"Audi": "Ауди",
-"e-tron": "Е-Трон",
-"e-tron GT": "Етрэн ГТ",
-"Q3": "Кью 3",
-"Q4 e-tron": "Кью 4 Етрэн",
-"Q5": "Кью 5",
-"Q7": "Кью 7",
-"Q8": "Кью 8",
-"R8": "R8",
-"RS Q3": "RS Кью 3",
-"RS3": "РС 3",
-"RS5": "РС 5",
-"RS7": "РС 7",
-"SQ5": "СКу 5",
-"SQ7": "СКу 7",
-"TT": "ТТ",
-
-# Aurus
-"Aurus": "Аурус",
-"Aurus Komendant": "Аурус Командант",
-"Aurus Senat": "Аурус Сенат",
-
-# Baojun
-"Baojun": "Баоцзюнь",
-"Baojun 510": "Баоцзюнь 510",
-"Baojun 530": "Баоцзюнь 530",
-"Baojun RC-6": "Баоцзюнь RC-6",
-
-# BMW
-"1 Series": "1 Серия",
-"2 Series": "2 Серия",
-"3 Series": "3 Серия",
-"4 Series": "4 Серия",
-"5 Series": "5 Серия",
-"6 Series": "6 Серия",
-"7 Series": "7 Серия",
-"8 Series": "8 Серия",
-"BMW": "БМВ",
-"M2": "Эм 2",
-"M3": "Эм 3",
-"M4": "Эм 4",
-"M5": "Эм 5",
-"X1": "Икс 1",
-"X2": "Икс 2",
-"X3": "Икс 3",
-"X4": "Икс 4",
-"X5": "Икс 5",
-"X6": "Икс 6",
-"X7": "Икс 7",
-"Z4": "Зет 4",
-
-# BYD
-"BYD": "Би-Уай-Ди",
-"BYD Atto 3": "Атто 3",
-"BYD Dolphin": "Би-Уай-Ди Дельфин",
-"BYD Han": "Би-Уай-Ди Хан",
-"BYD Qin": "Би-Уай-Ди Цин",
-"BYD Seal": "Би-Уай-Ди Сил",
-"BYD Song": "Би-Уай-Ди Сонг",
-"BYD Tang": "Би-Уай-Ди Танг",
-"BYD Tang EV": "Би-Уай-Ди Танг ЕВ",
-"BYD Yuan": "Би-Уай-Ди Юань",
-"BYD Yuan EV": "Би-Уай-Ди ЕВ",
-
-# Cadillac
-"Cadillac": "Кадиллак",
-"Escalade": "Эскалейд",
-
-# Chery
-"Chery": "Черри",
-"Chery Arrizo 5": "Черри Аризо 5",
-"Chery QQ": "Черри QQ",
-"Chery Tiggo 2": "Черри Тигго 2",
-"Chery Tiggo 3": "Черри Тигго 3",
-"Chery Tiggo 7": "Черри Тигго 7",
-"Chery Tiggo 8": "Черри Тигго 8",
-
-# Chevrolet
-"Bolt EV": "Болт ЕВ",
-"Chevrolet": "Шевроле",
-"Chevrolet Express": "Экспресс",
-"Aveo": "Авео",
-"Blazer": "Блейзер",
-"Cruz": "Круз",
-"Equinox": "Экуинокс",
-"Lacetti": "Лачетти",
-"Malibu": "Малибу",
-"Silverado": "Сильверадо",
-"Spark": "Спарк",
-"Tahoe": "Тахо",
-"Traverse": "Трэверс",
-
-# Dodge
-"Challenger": "Челленджер",
-"Charger": "Чарджер",
-"Dodge": "Додж",
-
-# EVolution
-"EVolution": "Эволюция",
-
-# FAW
-"FAW": "Фав",
-
-# Ferrari
-"296 GTB": "296 GTB",
-"488": "488",
-"F8 Tributo": "F8 Трибуто",
-"Ferrari": "Феррари",
-"Roma": "Рома",
-"SF90": "SF90",
-
-# Fiat
-"500": "500",
-"Doblo": "Добло",
-"Ducato": "Дукато",
-"Ducato Maxi": "Дукато Макси",
-"Fiat": "Фиат",
-"Fiat Ducato Maxi": "Дукато Макси",
-"Fiat Professional": "Фиат Профешионал",
-"Fiorino": "Фиорино",
-"Panda": "Панда",
-"Talento": "Таленто",
-"Tipo": "Типо",
-
-# Ford
-"Bronco": "Бронко",
-"e-Transit": "е-Транзит",
-"Ford": "Форд",
-"Ford Courier": "Форд Курьер",
-"Ford Galaxy": "Форд Гэлакси",
-"Ford Transit Van": "Транзит Фургон",
-"Mustang": "Мустанг",
-"Ranger": "Рейнджер",
-"Transit": "Транзит",
-"Transit Connect": "Транзит Коннект",
-"Transit Custom": "Транзит Кастом",
-
-# GAZ
-"GAZ": "Газ",
-"GAZ Volga": "Волга",
-"GAZ Sadko": "Садко",
-"Gazel": "ГАЗель",
-"Gazel Business": "ГАЗель Бизнес",
-"Gazon Next": "Газон Некст",
-"GAZelle": "ГАЗель",
-"GAZelle Next": "ГАЗель Некст",
-"Sobol": "Соболь",
-"Sobol 4x4": "Соболь 4х4",
-
-# Geely
-"Atlas": "Атлас",
-"Binrui": "Бинрай",
-"Coolray": "Кулрэй",
-"Emgrand": "Эмгранд",
-"Geely": "Джили",
-"Geely Atlas": "Джили Атлас",
-"Geely Atlas Pro": "Джили Атлас Про",
-"Geely Binrui": "Джили Бинрай",
-"Geely Coolray": "Джили Кулрэй",
-"Geely Emgrand": "Джили Эмгранд",
-"Geely Geometry": "Джили Геометрия",
-"Geely Preface": "Джили Префейс",
-"Tiggo": "Тигго",
-"Tiggo 7": "Тигго 7",
-
-# GMC
-"GMC": "ДжиЭмСи",
-"Sierra": "Сиерра",
-
-# Great Wall
-"Great Wall": "Грейт Уолл",
-
-# Haval
-"Haval": "Хавал",
-"Haval F7": "Хавал F7",
-"Haval H2": "Хавал H2",
-"Haval H5": "Хавал H5",
-"Haval H6": "Хавал H6",
-"Haval H9": "Хавал Н9",
-"Haval Jolion": "Хавал Джолион",
-
-# Honda
-"Accord": "Аккорд",
-"Civic": "Цивик",
-"CR-V": "СиэрВ",
-"Fit": "Фит",
-"HR-V": "АшэрВ",
-"Honda": "Хонда",
-"Jazz": "Джаз",
-"NSX": "НСХ",
-"Odyssey": "Одиссей",
-"Pilot": "Пилот",
-"Ridgeline": "Риджлайн",
-
-# Hongqi
-"Hongqi": "Хончи",
-
-# Hyundai
-"Elantra": "Элантра",
-"Hyundai": "Хендай",
-"Ioniq": "Ионик",
-"Santa Cruz": "Санта Крус",
-"i20": "i20",
-"i30": "i30",
-"i4": "i4",
-"iX": "iX",
-"Ioniq 5": "Ионик 5",
-"Ioniq 6": "Ионик 6",
-"Kona": "Кона",
-"Kona Electric": "Кона Электрик",
-"Palisade": "Палисад",
-"Santa Fe": "Санта Фе",
-"Sonata": "Соната",
-"Tucson": "Тусон",
-
-# Isuzu
-"D-Max": "Ди-Макс",
-"Isuzu": "Исузу",
-"Isuzu N-Series": "Исузу N-Серия",
-
-# JAC
-"JAC": "Джак",
-"JAC Refine S4": "Джак Рефайн S4",
-"JAC S2": "Джак S2",
-"JAC iEV": "Джак iEV",
-"Refine": "Рефайн",
-
-# Jaguar
-"Jaguar": "Ягуар",
-
-# Jeep
-"Grand Cherokee": "Гранд Чероки",
-"Jeep": "Джип",
-"Wrangler": "Рэнглер",
-
-# KAMAZ
-"KAMAZ": "КамАЗ",
-"KAMAZ Electric": "КамАЗ электромобиль",
-"KAMAZ Trucks": "КамАЗ грузовики",
-
-# Kia
-"Carnival": "Карнивал",
-"Ceed": "Сид",
-"Kia": "Киа",
-"Kia EV6": "Киа EV6",
-"Kia EV9": "Киа EV9",
-"Kia Seltos": "Селтос",
-"Kia Stonic": "Стоник",
-"Optima": "Оптима",
-"Rio": "Рио",
-"Sorento": "Соренто",
-"Soul": "Соул",
-"Sportage": "Спортейдж",
-"Stinger": "Стингер",
-
-# Lada
-"4x4": "Нива 4x4",
-"Granta": "Гранта",
-"Kalina": "Калина",
-"Lada": "Лада",
-"Lada 4x4": "Лада 4х4",
-"Lada 4x4 Urban": "Лада 4x4 Урбан",
-"Lada Granta Cross": "Лада Гранта Кросс",
-"Lada Granta Liftback": "Лада Гранта хэтчбек",
-"Lada Granta Sedan": "Лада Гранта седан",
-"Lada Largus Cross": "Лада Ларгус Кросс",
-"Lada Niva Travel": "Лада Нива Тревел",
-"Lada Priora": "Лада Приора",
-"Lada Samara": "Лада Самара",
-"Lada Vesta Cross": "Лада Веста Кросс",
-"Lada Vesta Sport": "Лада Веста Спорт",
-"Lada Vesta SW": "Лада Веста Универсал",
-"Lada XRAY Cross": "Лада Иксрэй Кросс",
-"Lada XRay": "Лада Иксрэй",
-"Largus": "Ларгус",
-"Niva": "Нива",
-"Vesta": "Веста",
-
-# Lamborghini
-"Aventador": "Авендадор",
-"Huracan": "Уракан",
-"Lamborghini": "Ламборгини",
-"Sián": "Сиан",
-"Urus": "Урус",
-
-# Lancia
-"Lancia": "Ланция",
-
-# Land Rover
-"Discovery": "Дискавери",
-"Land Rover": "Ленд Ровер",
-"Range Rover": "Рендж Ровер",
-
-# Levdeo
-"Levdeo": "Левдео",
-
-# Lifan
-"F3": "Ф3",
-"F7": "Ф7",
-"Lifan": "Лифан",
-"Lifan 820": "Лифан 820",
-"Lifan KPR": "Лифан КРП",
-"Lifan Myway": "Лифан Майвэй",
-"Lifan Solano": "Лифан Солано",
-"Lifan X60": "Лифан X60",
-
-# Lucid
-"Air": "Эйр",
-"Lucid": "Луцид",
-
-# Lynk & Co
-"Lynk & Co": "Линк & Ко",
-"Lynk & Co 01": "Линк & Ко 01",
-"Lynk & Co 03": "Линк & Ко 03",
-"Lynk & Co 05": "Линк & Ко 05",
-
-# Maserati
-"Ghibli": "Гибли",
-"GranTurismo": "Гран Туризмо",
-"Levante": "Леванте",
-"MC20": "MC20",
-"Maserati": "Мазерати",
-"Quattroporte": "Кваттропорте",
-
-# Mazda
-"BT-50": "БТ-50",
-"CX-3": "Кс 3",
-"CX-5": "Кс 5",
-"CX-9": "Кс 9",
-"Mazda": "Мазда",
-"Mazda CX-30": "Мазда CX-30",
-"Mazda CX-5": "Мазда CX-5",
-"Mazda MX-30": "Мазда MX-30",
-"Mazda2": "Мазда 2",
-"Mazda3": "Мазда 3",
-"Mazda6": "Мазда 6",
-"MX-30": "Мазда MX-30",
-"MX-5": "МХ 5",
-"RX-8": "РХ 8",
-
-# Mercedes-Benz
-"A-Class": "А-Класс",
-"AMG GT": "АМГ ГТ",
-"B-Class": "Б-Класс",
-"C-Class": "С-Класс",
-"CLA": "CLA",
-"CLS": "ЦЛС",
-"Citan": "Цитан",
-"E-Class": "Е-Класс",
-"EQC": "ЭКВЦ",
-"G-Class": "Г-Класс",
-"GLA": "GLA",
-"GLC": "ГЛЦ",
-"GLE": "ГЛЕ",
-"GLE Coupe": "ГЛЕ Купе",
-"GLS": "ГЛС",
-"Mercedes": "Мерседес",
-"Mercedes-Benz": "Мерседес-Бенц",
-"S-Class": "Си-Класс",
-"SL-Class": "СЛ-Класс",
-"Sprinter": "Спринтер",
-"V-Class": "В-Класс",
-"Vito": "Вито",
-"eVito": "еВито",
-"eVito Tourer": "еВито Турайер",
-
-# Maybach
-"Maybach": "Майбах",
-
-# MG
-"MG": "МГ",
-
-# Mini
-"Cooper": "Купер",
-"Mini": "Мини",
-"Mini Cooper": "Мини Купер",
-
-# Mitsubishi
-"ASX": "АСХ",
-"Delica": "Делика",
-"Eclipse": "Иклипс",
-"Eclipse Cross": "Иклепс Кросс",
-"Galant": "Галант",
-"L200": "L200",
-"Lancer": "Лансер",
-"Mitsubishi": "Мицубиши",
-"Mitsubishi L300": "Л300",
-"Outlander": "Аутлендер",
-"Pajero": "Паджеро",
-
-# Moskvitch
-"Moskvitch": "Москвич",
-"Moskvitch 3": "Москвич 3",
-"Moskvitch 403": "Москвич 403",
-"Moskvitch 412": "Москвич 412",
-"Moskvitch Aleko": "Москвич Алеко",
-"Moskvitch EV": "Москвич электромобиль",
-
-# Neta
-"Neta": "Нета",
-
-# NIO
-"EC6": "Нио EC6",
-"ES6": "Нио ES6",
-"ES7": "ES7",
-"ES8": "Нио ES8",
-"ET7": "Нио ET7",
-"NIO": "Нио",
-"NIO EC6": "Нио EC6",
-"NIO ES6": "Нио ES6",
-"NIO ES8": "Нио ES8",
-"NIO ET7": "Нио ET7",
-
-# Nissan
-"370Z": "370З",
-"Altima": "Альтима",
-"Avalon": "Эвалон",
-"e-NV200": "е-НВ200",
-"GT-R": "ГТ-Р",
-"Juke": "Жук",
-"Leaf": "Лиф",
-"Maxima": "Максима",
-"Murano": "Муранo",
-"Navara": "Навара",
-"Nissan": "Ниссан",
-"Nissan NV200": "НВ200",
-"Nissan Patrol Y62": "Патрол Y62",
-"NV300": "НВ300",
-"NV400": "НВ400",
-"Pathfinder": "Патфайндер",
-"Patrol": "Патрол",
-"Qashqai": "Кашкай",
-"Rogue": "Роудж",
-"Sentra": "Сентра",
-"Tacoma": "Такома",
-"Titan": "Титан",
-"Tundra": "Тундра",
-"Venza": "Венза",
-"X-Trail": "Икс-Трэйл",
-
-# Opel
-"Astra": "Астра",
-"Combo": "Комбо",
-"Corsa": "Корса",
-"Crossland": "Кроссленд",
-"Grandland": "Грандленд",
-"Insignia": "Инсигния",
-"Mokka": "Мокка",
-"Opel": "Опель",
-
-# Ora
-"Ora": "Ора",
-
-# Peugeot
-"208": "208",
-"3008": "3008",
-"308": "308",
-"5008": "5008",
-"508": "508",
-"Boxer": "Боксер",
-"Partner": "Партнёр",
-"Peugeot": "Пежо",
-"Peugeot Boxer": "Пежо Боксер",
-"Peugeot Partner": "Пежо Партнёр",
-"Rifter": "Рифтер",
-"Traveller": "Травеллер",
-
-# Polestar
-"Polestar": "Полистар",
-"Polestar 2": "Полистар 2",
-"Polestar 3": "Полистар 3",
-
-# Porsche
-"911": "911",
-"Cayman": "Кайман",
-"Macan": "Макан",
-"Porsche": "Порше",
-"Taycan": "Тайкан",
-
-# Renault
-"Captur": "Каптюр",
-"Clio": "Клио",
-"Duster": "Дастер",
-"Kangoo": "Кангу",
-"Kangoo Express": "Кангу Экспресс",
-"Kangoo Van": "Кангу Ван",
-"Kangoo ZE": "Кангу ЗЕ",
-"Koleos": "Колеос",
-"Logan": "Логан",
-"Master": "Мастер",
-"Megane": "Меган",
-"Renault": "Рено",
-"Renault Kangoo Express": "Кангу Экспресс",
-"Renault Master": "Мастер",
-"Renault Master Van": "Мастер Фургон",
-"Renault Trafic Passenger": "Трафик Пассенджер",
-"Sandero": "Сандеро",
-"Trafic": "Трафик",
-
-# Rivian
-"R1T": "R1T",
-"Rivian": "Ривиан",
-
-# Roewe
-"Roewe": "Роу",
-
-# Rostec Electric
-"Rostec Electric": "Ростех электромобиль",
-
-# SAIC
-"SAIC": "САЙК",
-
-# Seat
-"Cupra": "Купра",
-"Seat": "Сеат",
-
-# Skoda
-"Fabia": "Фабия",
-"Karoq": "Карок",
-"Kodiaq": "Кодияк",
-"Octavia": "Октавия",
-"Skoda": "Шкода",
-"Skoda Enyaq": "Еняк",
-"Superb": "Суперб",
-"Yeti": "Йети",
-
-# Smart
-"Smart": "Смарт",
-"Smart ForTwo": "Смарт Фор Ту",
-
-# Subaru
-"Ascent": "Асцент",
-"BRZ": "BRZ",
-"Crosstrek": "Кросстрек",
-"Forester": "Форестер",
-"Impreza": "Импреза",
-"Legacy": "Легаси",
-"Outback": "Аутбек",
-"Subaru": "Субару",
-"WRX": "ВРХ",
-"XV": "Икс ВИ",
-
-# Suzuki
-"Ciaz": "Циаз",
-"Ignis": "Игнис",
-"Jimny": "Джимни",
-"Suzuki": "Сузуки",
-"Suzuki Carry": "Сузуки Кэрри",
-"SX4": "ЭС 4",
-"Swift": "Свифт",
-"Vitara": "Витара",
-
-# Tesla
-"Cybertruck": "Кибертрак",
-"Model 3": "Модель 3",
-"Model S": "Модель S",
-"Model X": "Модель X",
-"Model Y": "Модель Y",
-"Roadster": "Родстер",
-"Semi": "Трейлер Semи",
-"Tesla": "Тесла",
-"Tesla Model Plaid": "Тесла Модель Плайд",
-
-# Toyota
-"Avensis": "Авенсис",
-"Camry": "Камри",
-"Corolla": "Королла",
-"Corolla Cross": "Королла Кросс",
-"Dyna": "Дайна",
-"HiAce": "ХайЭйс",
-"Highlander": "Хайлендер",
-"Hilux": "Хайлюкс",
-"Land Cruiser": "Ленд Крузер",
-"Mirai": "Мираи",
-"Prius": "Приус",
-"Proace": "Проэйс",
-"RAV4": "Рав 4",
-"Sequoia": "Секвоя",
-"Sienta": "Сента",
-"Tacoma": "Такома",
-"Toyota": "Тойота",
-"Toyota Hiace Commuter": "ХайЭйс Комьютер",
-"Toyota Proace City": "Проэйс Сити",
-"Tundra": "Тундра",
-"Venza": "Венза",
-"Vios": "Виос",
-"Yaris": "Ярис",
-"C-HR": "C-HR",
-
-# UAZ
-"UAZ": "УАЗ",
-"UAZ Cargo": "УАЗ Грузовик",
-"UAZ Hunter": "УАЗ Хантер",
-"UAZ Patriot": "УАЗ Патриот",
-"UAZ Pickup": "УАЗ Пикап",
-"UAZ Profi": "УАЗ Профи",
-
-# Vauxhall
-"Vauxhall": "Воксхолл",
-"Vauxhall Astra": "Воксхолл Астра",
-"Vauxhall Corsa": "Воксхолл Корса",
-
-# Volkswagen
-"Arteon": "Артеон",
-"Caddy": "Кэдди",
-"Crafter": "Крафтер",
-"Golf": "Гольф",
-"ID.3": "АйДи.3",
-"ID.4": "АйДи.4",
-"ID.Buzz": "АйДи.Базз",
-"ID. Buzz": "АйДи Базз",
-"Jetta": "Джетта",
-"Multivan": "Мультивэн",
-"Passat": "Пассат",
-"Polo": "Поло",
-"Scirocco": "Сирокко",
-"T-Roc": "Т-Рок",
-"Tiguan": "Тигуан",
-"Touareg": "Туарег",
-"Transporter": "Транспортер",
-"Up!": "Ап!",
-"Volkswagen": "Фольксваген",
-"Volkswagen Amarok": "Фольксваген Амарок",
-"Volkswagen Caddy": "Фольксваген Кэдди",
-"Volkswagen Caravelle": "Каравелле",
-"Volkswagen Transporter": "Фольксваген Транспортер",
-
-# Volvo
-"S60": "S60",
-"S90": "S90",
-"V60": "V60",
-"Volvo": "Вольво",
-"XC40": "XC40",
-"XC60": "XC60",
-"XC90": "XC90",
-
-# Wey
-"Wey": "Вей",
-
-# Wuling
-"Wuling": "Вулинг",
-"Wuling Hongguang": "Вулинг Хонггуан",
-"Wuling Rongguang": "Вулинг Жунгуан",
-"Wuling Sunshine": "Вулинг Саншайн",
-
-# XPeng
-"G3": "ХПэнг G3",
-"G9": "ХПэнг G9",
-"P7": "ХПэнг P7",
-"XPeng": "ХПэнг",
-"XPeng G3": "ХПэнг G3",
-"XPeng G9": "ХПэнг G9",
-"XPeng P7": "ХПэнг P7",
-
-# Yema
-"Yema": "Йема",
-
-# ZAZ
-"ZAZ": "Заз",
-
-# Zetta
-"Zetta": "Зетта",
-
-# Общие категории
-"Ambulance": "Скорая помощь",
-"Antique Car": "Антикварный автомобиль",
-"Armored Car": "Бронированный автомобиль",
-"ATV": "Вездеход",
-"Bus": "Автобус",
-"Bulldozer": "Бульдозер",
-"Cargo Truck": "Грузовой автомобиль",
-"Classic Car": "Классический автомобиль",
-"Construction Equipment": "Строительное оборудование",
-"Container Carrier": "Контейнеровоз",
-"Convertible": "Кабриолет",
-"Crane Truck": "Кран-манипулятор",
-"Cruiser": "Круизер",
-"Diplomatic Car": "Дипломатическое транспортное средство",
-"Dual Sport Bike": "Двухрежимный мотоцикл",
-"Dump Truck": "Самосвал",
-"Emergency Response": "Аварийно-спасательная служба",
-"Enduro Bike": "Эндуро",
-"Excavator": "Экскаватор",
-"Fire Engine": "Пожарная машина",
-"Flatbed": "Платформа",
-"Forklift": "Погрузчик",
-"Funeral Coach": "Катафалк",
-"Government Fleet": "Государственный автопарк",
-"Hot Rod": "Хотрод",
-"Loader": "Погрузчик",
-"Medical Transport": "Медицинская перевозка",
-"Military Vehicle": "Военная техника",
-"Mobile Crane": "Автомобильный кран",
-"Motorcycle": "Мотоцикл",
-"Muscle Car": "Мускул-кар",
-"Off-Road Bike": "Внедорожный мотоцикл",
-"Police Car": "Полиция",
-"Prison Transport": "Транспортировка заключенных",
-"Quad Bike": "Квадроцикл",
-"Reefer": "Изотермическая фура",
-"Rescue Vehicle": "Спасательное транспортное средство",
-"Retro Style": "Ретро-стиль",
-"Road Roller": "Каток дорожный",
-"Scooter": "Скутер",
-"Security Vehicle": "Охрана и безопасность",
-"Semi-trailer": "Полуприцеп",
-"Side-by-Side": "SSV (Side by Side)",
-"Snow Plow": "Снегоочистительная техника",
-"Sports Bike": "Спортбайк",
-"Three-Wheeler": "Трицикл",
-"Tipper": "Самосвальная техника",
-"Touring Bike": "Туристический мотоцикл",
-"Trailer": "Прицеп",
-
-# Дополнение
-"Pickup": "Пикап",
-"DAIHATSU": "Дайхатсу",
-"Explorer": "Эксплорер",
-"Insight": "Инсигт",
-"Coupe": "Купе",
-"GENESIS": "Дженезис",
-"Sports": "Спорт",    
-"SSANGYONG": "Сангёнг",
-"Trucks": "Тракс",
-"Cruiser": "Крузер",
-"Connect": "Коннект", 
-"HYBRID": "Гибрид",
-"Creta": "Крета",
-"HYBRID": "Гибрид",
-"#Н/Д": "",
-"I": "I",
-"II": "II",
-"III": "III",   
-"IV": "IV",
-"IV": "IV",
-"V": "V",
-"VI": "VI",
-"VII": "VII",
-"VIII": "VIII",
-"IX": "IX",
-"X": "X",
-"XI": "XI",
-}
-
-# Расширенный словарь автоматического перевода en→ru
-en_to_ru_map: Dict[str, str] = {
-    "acura": "Акура",
-    "integra": "Интегра",
-    "mdx": "МДХ",
-    "rdx": "РДХ",
-    "rsx": "РСХ",
-    "tlx": "ТЛКС",
-    "aston martin": "Астон Мартин",
-    "bugatti": "Бугатти",
-    "ferrari": "Феррари",
-    "lamborghini": "Ламборгини",
-    "mclaren": "Макларен",
-    "porsche": "Порше",
-    "mercedes": "Мерседес",
-    "bmw": "БМВ",
-    "audi": "Ауди",
-}
-
-# --- Транслитерация ---
-_LAT_TO_CYR = {
-    'Shch':'Щ','shch':'щ','SHCH':'Щ',
-    'Yo':'Ё','yo':'ё','YO':'Ё',
-    'Zh':'Ж','zh':'ж','ZH':'Ж',
-    'Kh':'Х','kh':'х','KH':'Х',
-    'Ts':'Ц','ts':'ц','TS':'Ц',
-    'Ch':'Ч','ch':'ч','CH':'Ч',
-    'Sh':'Ш','sh':'ш','SH':'Ш',
-    'Yu':'Ю','yu':'ю','YU':'Ю',
-    'Ya':'Я','ya':'я','YA':'Я',
-    "Y'":"Ы","y'":"ы",'C':'К',
-    "E'":"Э","e'":"э",
-    'A':'А','a':'а','B':'Б','b':'б','V':'В','v':'в','G':'Г','g':'г',
-    'D':'Д','d':'д','E':'Е','e':'е','Z':'З','z':'з','I':'И','i':'и',
-    'Y':'Й','y':'й','K':'К','k':'к','L':'Л','l':'л','M':'М','m':'м',
-    'N':'Н','n':'н','O':'О','o':'о','P':'П','p':'п','R':'Р','r':'р',
-    'S':'С','s':'с','T':'Т','t':'т','U':'У','u':'у','F':'Ф','f':'ф',
-}
-
-_CYR_TO_LAT = {
-    'А':'A','а':'a','Б':'B','б':'b','В':'V','в':'v','Г':'G','г':'g',
-    'Д':'D','д':'d','Е':'E','е':'e','Ё':'Yo','ё':'yo','Ж':'Zh','ж':'zh',
-    'З':'Z','з':'z','И':'I','и':'i','Й':'Y','й':'y','К':'K','к':'k',
-    'Л':'L','л':'l','М':'M','м':'m','Н':'N','н':'n','О':'O','о':'o',
-    'П':'P','п':'p','Р':'R','р':'r','С':'S','с':'s','Т':'T','т':'t',
-    'У':'U','у':'u','Ф':'F','ф':'f','Х':'Kh','х':'kh','Ц':'Ts','ц':'ts',
-    'Ч':'Ch','ч':'ch','Ш':'Sh','ш':'sh','Щ':'Shch','щ':'shch','C':'К',
-    'Ы':"Y'",'ы':"y'",'Э':"E'",'э':'e\'','Ю':'Yu','ю':'yu','Я':'Ya','я':'ya'
-}
-
-_LAT_KEYS = sorted(_LAT_TO_CYR.keys(), key=len, reverse=True)
-
-def transliterate_latin_to_cyrillic(text: str) -> str:
-    if not text:
-        return text
-    i = 0
-    out = []
-    L = len(text)
-    while i < L:
-        matched = False
-        for k in _LAT_KEYS:
-            if text.startswith(k, i):
-                out.append(_LAT_TO_CYR[k])
-                i += len(k)
-                matched = True
-                break
-        if not matched:
-            out.append(text[i])
-            i += 1
-    return ''.join(out)
-
-def transliterate_cyrillic_to_latin(text: str) -> str:
-    if not text:
-        return text
-    return ''.join(_CYR_TO_LAT.get(ch, ch) for ch in text)
-
-def transliterate(text: str, direction: str = 'lat2cyr') -> str:
-    if direction == 'lat2cyr':
-        return transliterate_latin_to_cyrillic(text)
-    if direction == 'cyr2lat':
-        return transliterate_cyrillic_to_latin(text)
-    return text
-
-# --- Вспомогательные функции ---
-def safe_save_json(dictionary: Dict, filename: str = ADDITIONS_FILE):
-    try:
-        dirn = os.path.dirname(filename) or '.'
-        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=dirn, delete=False) as tmp:
-            json.dump(dictionary, tmp, ensure_ascii=False, indent=2)
-            tmp_name = tmp.name
-        os.replace(tmp_name, filename)
-        print("Saved json to", filename)
-    except Exception as e:
-        print("Error saving json:", e)
-
-def load_additional_dict(filename: str = ADDITIONS_FILE) -> Dict:
-    if not os.path.exists(filename):
-        return {}
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            obj = json.load(f)
-            if isinstance(obj, dict):
-                return {str(k): str(v) for k, v in obj.items()}
-    except Exception:
-        print("Error loading json")
-    return {}
-
-def detect_language(text: str) -> str:
-    if not text:
-        return 'ru'
-    cyr = len(re.findall(r'[А-Яа-яЁё]', text))
-    lat = len(re.findall(r'[A-Za-z]', text))
-    return 'en' if lat > cyr else 'ru'
-
-def preserve_case_replace(src: str, repl: str) -> str:
-    if src.isupper():
-        return repl.upper()
-    if src.istitle():
-        return repl.capitalize()
-    return repl
-
-_RE_TOK = re.compile(r'\w+|\s+|[^\w\s]+', flags=re.UNICODE)
-
-# Ваша интегрированная функция обработки текста
-def process_text(
-    text: str,
-    dict_brands_models: Dict,
-    en_to_ru_map: Dict,
-    translit_enabled: bool = True,
-    enable_dict: bool = True,
-    enable_en_ru: bool = True,
-    enable_lat_cyr: bool = True
-) -> str:
-    if text is None:
-        return ''
-    original = text
-    norm_map = {k.lower(): v for k, v in dict_brands_models.items()}
-
-    tokens = _RE_TOK.findall(text)
-    lang = detect_language(text)
-
-    for i, tk in enumerate(tokens):
-        if tk.strip() and tk.strip().isalnum():
-            key = tk.lower()
-            replacement: str = None
-
-            # 1. Проверка в основном словаре
-            if enable_dict and key in norm_map:
-                replacement = preserve_case_replace(tk, norm_map[key])
-            # 2. Проверка в en_to_ru_map для автоматического перевода
-            elif enable_en_ru:
-                if key in en_to_ru_map:
-                    replacement = preserve_case_replace(tk, en_to_ru_map[key])
-            # 3. Транслитерация (лат→кирилл)
-            if not replacement and enable_lat_cyr and re.match(r'^[A-Za-z]+$', tk):
-                trans = transliterate(tk, 'lat2cyr')
-                if trans.lower() in norm_map:
-                    replacement = preserve_case_replace(tk, norm_map[trans.lower()])
-            if replacement is not None:
-                tokens[i] = replacement
-
-    joined = ''.join(tokens)
-
-    # Финальный вывод
-    if lang == 'en' and enable_lat_cyr:
-        translit_text = transliterate(joined, 'lat2cyr')
-        return f'"{original}" - ({translit_text})'
-    else:
-        return f'"{original}"'
-
-# --- Основные функции обработки файлов ---
-def read_dataframe_from_bytes(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    ext = os.path.splitext(filename)[1].lower()
-    if ext in ('.xlsx', '.xls'):
-        return pd.read_excel(io.BytesIO(file_bytes), engine='openpyxl')
-    if ext == '.csv':
-        for enc in ('utf-8', 'cp1251'):
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
+
+# ============================
+# НАСТРОЙКА ПРИЛОЖЕНИЯ
+# ============================
+st.set_page_config(
+    page_title="🎯 Генератор Инфографики v3.0 - Excel версия",
+    page_icon="🎨",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('infographic_generator.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# ============================
+# ИНИЦИАЛИЗАЦИЯ СЕССИИ
+# ============================
+def init_session_state():
+    """Инициализация состояния сессии"""
+    defaults = {
+        'df': None,
+        'processed_count': 0,
+        'processing_stats': {
+            'total': 0,
+            'success': 0,
+            'failed': 0,
+            'start_time': None,
+            'end_time': None
+        },
+        'current_template': 'standard',
+        'column_mapping': {},
+        'output_dir': 'output_infographics',
+        'batch_results': [],
+        'image_cache': {},
+        'preview_image': None,
+        'uploaded_file_name': None,
+        'export_settings': {
+            'format': 'PNG',
+            'quality': 85,
+            'resize': True,
+            'target_size': 1200
+        },
+        'processing_settings': {
+            'batch_size': 100,
+            'max_workers': 8,
+            'timeout': 15,
+            'retry_count': 2
+        }
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+init_session_state()
+
+# ============================
+# КОНСТАНТЫ И ШАБЛОНЫ
+# ============================
+class InfographicTemplates:
+    """Класс для управления шаблонами инфографики"""
+    
+    TEMPLATES = {
+        "standard": {
+            "name": "📋 Стандартный",
+            "description": "Универсальный шаблон для большинства товаров",
+            "text_positions": {
+                "top_left": {"x": 0.05, "y": 0.05, "align": "left", "max_width": 0.4},
+                "top_right": {"x": 0.95, "y": 0.05, "align": "right", "max_width": 0.4},
+                "bottom_left": {"x": 0.05, "y": 0.85, "align": "left", "max_width": 0.4},
+                "bottom_right": {"x": 0.95, "y": 0.85, "align": "right", "max_width": 0.4}
+            },
+            "font_sizes": {
+                "top_left": 36,
+                "top_right": 32,
+                "bottom_left": 24,
+                "bottom_right": 24
+            },
+            "colors": {
+                "text": (255, 255, 255, 255),
+                "shadow": (0, 0, 0, 180),
+                "highlight": (255, 215, 0, 255)
+            },
+            "effects": {
+                "shadow": True,
+                "background": False,
+                "border": False
+            }
+        },
+        "premium": {
+            "name": "⭐ Премиум",
+            "description": "Сдержанный дизайн для премиальных товаров",
+            "text_positions": {
+                "top_left": {"x": 0.1, "y": 0.08, "align": "left", "max_width": 0.8},
+                "top_right": {"x": 0.9, "y": 0.08, "align": "right", "max_width": 0.3},
+                "bottom_left": {"x": 0.1, "y": 0.88, "align": "left", "max_width": 0.8},
+                "bottom_right": {"x": 0.9, "y": 0.88, "align": "right", "max_width": 0.3}
+            },
+            "font_sizes": {
+                "top_left": 32,
+                "top_right": 28,
+                "bottom_left": 20,
+                "bottom_right": 20
+            },
+            "colors": {
+                "text": (255, 255, 255, 230),
+                "shadow": (0, 0, 0, 150),
+                "highlight": (220, 220, 220, 255)
+            },
+            "effects": {
+                "shadow": True,
+                "background": True,
+                "border": True
+            }
+        },
+        "promo": {
+            "name": "🔥 Акционный",
+            "description": "Яркий шаблон для распродаж и акций",
+            "text_positions": {
+                "top_left": {"x": 0.05, "y": 0.05, "align": "left", "max_width": 0.45},
+                "top_right": {"x": 0.95, "y": 0.05, "align": "right", "max_width": 0.45},
+                "bottom_left": {"x": 0.05, "y": 0.9, "align": "left", "max_width": 0.45},
+                "bottom_right": {"x": 0.95, "y": 0.9, "align": "right", "max_width": 0.45}
+            },
+            "font_sizes": {
+                "top_left": 40,
+                "top_right": 42,
+                "bottom_left": 26,
+                "bottom_right": 26
+            },
+            "colors": {
+                "text": (255, 255, 0, 255),
+                "shadow": (255, 0, 0, 180),
+                "highlight": (255, 255, 255, 255)
+            },
+            "effects": {
+                "shadow": True,
+                "background": True,
+                "border": False
+            }
+        },
+        "vertical": {
+            "name": "📱 Вертикальный",
+            "description": "Оптимизирован для Instagram Stories",
+            "text_positions": {
+                "top_left": {"x": 0.1, "y": 0.05, "align": "center", "max_width": 0.8},
+                "top_right": {"x": 0.5, "y": 0.15, "align": "center", "max_width": 0.8},
+                "bottom_left": {"x": 0.1, "y": 0.8, "align": "left", "max_width": 0.8},
+                "bottom_right": {"x": 0.9, "y": 0.9, "align": "right", "max_width": 0.8}
+            },
+            "font_sizes": {
+                "top_left": 32,
+                "top_right": 28,
+                "bottom_left": 22,
+                "bottom_right": 20
+            },
+            "colors": {
+                "text": (255, 255, 255, 255),
+                "shadow": (0, 0, 0, 200),
+                "highlight": (135, 206, 250, 255)
+            },
+            "effects": {
+                "shadow": True,
+                "background": False,
+                "border": False
+            }
+        }
+    }
+    
+    @classmethod
+    def get_template_names(cls):
+        """Получить список доступных шаблонов"""
+        return list(cls.TEMPLATES.keys())
+    
+    @classmethod
+    def get_template_display_name(cls, template_id):
+        """Получить отображаемое имя шаблона"""
+        return cls.TEMPLATES[template_id]["name"]
+
+# ============================
+# УТИЛИТЫ ДЛЯ РАБОТЫ С ИЗОБРАЖЕНИЯМИ
+# ============================
+class ImageProcessor:
+    """Класс для обработки изображений"""
+    
+    @staticmethod
+    def load_image_from_url(url, timeout=15, retries=2):
+        """Загрузка изображения по URL с повторными попытками"""
+        for attempt in range(retries + 1):
             try:
-                return pd.read_csv(io.StringIO(file_bytes.decode(enc)), dtype=str)
-            except:
-                continue
-        return pd.read_csv(io.StringIO(file_bytes.decode('latin1')), dtype=str)
-    return pd.DataFrame()
-
-def process_file_for_processing(
-    file_bytes: bytes,
-    filename: str,
-    col_name: str,
-    dict_brands_models: Dict,
-    translit_enabled: bool
-) -> pd.DataFrame:
-    df = read_dataframe_from_bytes(file_bytes, filename)
-    if df.empty:
-        raise ValueError("Файл не содержит данных или формат не поддерживается.")
-    if col_name not in df.columns:
-        raise ValueError(f"Столбец '{col_name}' не найден.")
-    # Преобразуем все значения столбца в строки
-    series = df[col_name].astype(str).fillna("")
-    processed = [process_text(s, dict_brands_models, en_to_ru_map) for s in series]
-    df_out = df.copy()
-    df_out[col_name] = processed
-    # Обеспечиваем типы строк для всех колонок
-    for col in df_out.columns:
-        df_out[col] = df_out[col].astype(str)
-    return df_out
-
-# Загружаем словарь при старте
-car_brands_models.update(load_additional_dict(ADDITIONS_FILE))
-
-# --- Streamlit UI ---
-def run():
-    st.set_page_config(page_title="🚗 Обработка брендов/моделей", layout="wide")
-    st.title("Обработка брендов/моделей")
-
-    # Используем сессию для хранения словаря
-    if 'car_brands_models' not in st.session_state:
-        st.session_state['car_brands_models'] = car_brands_models.copy()
-
-    # Флаги обработки
-    enable_dict = st.checkbox("Обрабатывать по словарю", value=True)
-    enable_en_ru = st.checkbox("Обрабатывать английский/русский", value=True)
-    enable_lat_cyr = st.checkbox("Обрабатывать транслит (лат→кирилл)", value=True)
-
-    # Загрузка файла словаря
-    uploaded_dict_file = st.file_uploader("Загрузить файл словаря (JSON, CSV или XLSX)", type=["json", "csv", "xlsx"])
-    if uploaded_dict_file:
-        try:
-            data = uploaded_dict_file.read()
-            name = uploaded_dict_file.name.lower()
-            new_dict = {}
-            if name.endswith('.json'):
-                obj = json.loads(data.decode('utf-8'))
-                if isinstance(obj, dict):
-                    new_dict = {str(k): str(v) for k, v in obj.items()}
-            elif name.endswith('.csv'):
-                df = pd.read_csv(io.StringIO(data.decode('utf-8')))
-                if df.shape[1] >= 2:
-                    new_dict = {str(k): str(v) for k, v in zip(df.iloc[:,0].astype(str), df.iloc[:,1].astype(str))}
-            elif name.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(io.BytesIO(data), engine='openpyxl')
-                if df.shape[1] >= 2:
-                    new_dict = {str(k): str(v) for k, v in zip(df.iloc[:,0].astype(str), df.iloc[:,1].astype(str))}
-            if new_dict:
-                st.session_state['car_brands_models'].clear()
-                st.session_state['car_brands_models'].update(new_dict)
-                safe_save_json(st.session_state['car_brands_models'], ADDITIONS_FILE)
-                st.success("Словарь обновлён и сохранён.")
-        except Exception as e:
-            st.error(f"Ошибка при загрузке словаря: {e}")
-
-    # Редактирование словаря вручную
-    dict_text = "\n".join(f"{k},{v}" for k, v in st.session_state['car_brands_models'].items())
-    edited_text = st.text_area("Редактировать словарь (каждая строка: латиница,кириллица)", value=dict_text, height=200)
-    if st.button("Сохранить словарь"):
-        new_dict = {}
-        for line in edited_text.splitlines():
-            if not line.strip():
-                continue
-            parts = line.split(",", 1)
-            if len(parts) == 2:
-                k, v = parts
-                new_dict[k.strip()] = v.strip()
-        if new_dict:
-            st.session_state['car_brands_models'].clear()
-            st.session_state['car_brands_models'].update(new_dict)
-            safe_save_json(st.session_state['car_brands_models'], ADDITIONS_FILE)
-            st.success("Словарь сохранён.")
-        else:
-            st.warning("Нет корректных строк для сохранения.")
-
-    # Загрузка файлов
-    uploaded_files = st.file_uploader("Загрузите один или несколько файлов", type=["xlsx", "xls", "csv"], accept_multiple_files=True)
-    if uploaded_files:
-        for uploaded_file in uploaded_files:
-            try:
-                file_bytes = uploaded_file.read()
-                df_preview = read_dataframe_from_bytes(file_bytes, uploaded_file.name).head(5)
-                if not df_preview.empty:
-                    col_options = list(df_preview.columns)
-                    col_name = st.selectbox(f"Выберите столбец для файла {uploaded_file.name}", options=col_options, key=uploaded_file.name)
-                else:
-                    col_name = st.text_input(f"Введите название столбца для файла {uploaded_file.name}", value="Название", key=uploaded_file.name)
-                if st.button(f"Обработать {uploaded_file.name}"):
-                    df_processed = process_file_for_processing(
-                        file_bytes,
-                        uploaded_file.name,
-                        col_name,
-                        st.session_state['car_brands_models'],
-                        enable_lat_cyr
-                    )
-                    st.success(f"Обработка файла {uploaded_file.name} завершена")
-                    st.dataframe(df_processed)
-                    # Скачать как Excel
-                    buf_xlsx = io.BytesIO()
-                    df_processed.to_excel(buf_xlsx, index=False, engine='openpyxl')
-                    buf_xlsx.seek(0)
-                    st.download_button(f"Скачать {uploaded_file.name} как Excel", buf_xlsx, file_name=f"processed_{uploaded_file.name}", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    # Скачать как CSV
-                    buf_csv = df_processed.to_csv(index=False).encode('utf-8')
-                    st.download_button(f"Скачать {uploaded_file.name} как CSV", buf_csv, file_name=f"processed_{os.path.splitext(uploaded_file.name)[0]}.csv", mime="text/csv")
+                response = requests.get(
+                    url, 
+                    timeout=timeout,
+                    headers={'User-Agent': 'Mozilla/5.0'}
+                )
+                response.raise_for_status()
+                
+                img = Image.open(BytesIO(response.content))
+                if img.mode != 'RGBA':
+                    img = img.convert('RGBA')
+                
+                # Кэшируем изображение
+                cache_key = hashlib.md5(url.encode()).hexdigest()
+                st.session_state.image_cache[cache_key] = img.copy()
+                
+                return img
+                
             except Exception as e:
-                st.error(f"Ошибка при обработке файла {uploaded_file.name}: {e}")
+                if attempt == retries:
+                    logger.error(f"Не удалось загрузить изображение {url}: {e}")
+                    return None
+                time.sleep(1)
+    
+    @staticmethod
+    def resize_image(img, target_size=1200):
+        """Изменение размера изображения с сохранением пропорций"""
+        if img.width > target_size or img.height > target_size:
+            ratio = min(target_size / img.width, target_size / img.height)
+            new_size = (int(img.width * ratio), int(img.height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+        return img
+    
+    @staticmethod
+    def add_text_to_image(img, text_data, template_id="standard"):
+        """Добавление текста на изображение по шаблону"""
+        if img is None:
+            return None
+            
+        template = InfographicTemplates.TEMPLATES[template_id]
+        draw = ImageDraw.Draw(img)
+        
+        # Пытаемся загрузить шрифт, иначе используем стандартный
+        try:
+            # Для Windows
+            font_paths = [
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/arialbd.ttf",
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+            ]
+            
+            regular_font = None
+            bold_font = None
+            
+            for path in font_paths:
+                if os.path.exists(path):
+                    try:
+                        regular_font = ImageFont.truetype(path, 24)
+                        bold_font = ImageFont.truetype(path, 24)
+                        break
+                    except:
+                        continue
+            
+            if regular_font is None:
+                regular_font = ImageFont.load_default()
+                bold_font = ImageFont.load_default()
+                
+        except:
+            regular_font = ImageFont.load_default()
+            bold_font = ImageFont.load_default()
+        
+        # Обработка каждого текстового элемента
+        for position_key, position_data in template["text_positions"].items():
+            if position_key in text_data and text_data[position_key]:
+                text = str(text_data[position_key])
+                if not text.strip():
+                    continue
+                
+                # Определяем координаты
+                x = int(position_data["x"] * img.width)
+                y = int(position_data["y"] * img.height)
+                
+                # Выбираем шрифт
+                font_size = template["font_sizes"][position_key]
+                try:
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except:
+                    # Масштабируем стандартный шрифт
+                    font = ImageFont.load_default()
+                    # Грубая эмуляция размера
+                    font = ImageFont.load_default(size=font_size)
+                
+                # Добавляем тень
+                if template["effects"]["shadow"]:
+                    shadow_color = template["colors"]["shadow"]
+                    draw.text((x+2, y+2), text, font=font, fill=shadow_color)
+                
+                # Добавляем основной текст
+                text_color = template["colors"]["text"]
+                draw.text((x, y), text, font=font, fill=text_color, 
+                         align=position_data["align"])
+        
+        return img
+    
+    @staticmethod
+    def save_image(img, filepath, format='PNG', quality=85):
+        """Сохранение изображения в файл"""
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            if format.upper() == 'JPEG':
+                img = img.convert('RGB')
+                img.save(filepath, 'JPEG', quality=quality, optimize=True)
+            elif format.upper() == 'WEBP':
+                img.save(filepath, 'WEBP', quality=quality, method=6)
+            else:  # PNG по умолчанию
+                img.save(filepath, 'PNG', optimize=True)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения {filepath}: {e}")
+            return False
 
+# ============================
+# УТИЛИТЫ ДЛЯ РАБОТЫ С EXCEL
+# ============================
+class ExcelProcessor:
+    """Класс для обработки Excel файлов"""
+    
+    @staticmethod
+    def read_excel_file(uploaded_file):
+        """Чтение Excel файла с автоматическим определением формата"""
+        try:
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            
+            if file_extension == 'xlsx':
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+            elif file_extension == 'xls':
+                df = pd.read_excel(uploaded_file, engine='xlrd')
+            else:
+                st.error(f"❌ Неподдерживаемый формат файла: {file_extension}")
+                return None
+            
+            # Очистка данных
+            df = df.replace({np.nan: None, '': None})
+            
+            # Логирование структуры данных
+            logger.info(f"Загружен файл: {uploaded_file.name}")
+            logger.info(f"Колонки: {df.columns.tolist()}")
+            logger.info(f"Строк: {len(df)}")
+            
+            return df
+            
+        except Exception as e:
+            st.error(f"❌ Ошибка чтения файла: {str(e)}")
+            logger.error(f"Ошибка чтения Excel: {e}")
+            return None
+    
+    @staticmethod
+    def validate_dataframe(df, required_columns=None):
+        """Валидация структуры DataFrame"""
+        if df is None or df.empty:
+            return False, "DataFrame пустой или не загружен"
+        
+        if required_columns:
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                return False, f"Отсутствуют колонки: {missing_columns}"
+        
+        return True, "DataFrame валиден"
+    
+    @staticmethod
+    def get_column_suggestions(df):
+        """Автоматическое предложение колонок для маппинга"""
+        suggestions = {
+            'top_left': None,
+            'top_right': None,
+            'bottom_left': None,
+            'bottom_right': None,
+            'image_url': None,
+            'filename': None
+        }
+        
+        column_names = [str(col).lower() for col in df.columns]
+        
+        # Поиск по ключевым словам
+        keyword_mapping = {
+            'top_left': ['название', 'name', 'товар', 'product', 'title'],
+            'top_right': ['цена', 'price', 'стоимость', 'руб'],
+            'bottom_left': ['характеристики', 'spec', 'описание', 'description', 'детали'],
+            'bottom_right': ['скидка', 'discount', 'акция', 'sale', 'распродажа'],
+            'image_url': ['url', 'ссылка', 'image', 'картинка', 'фото', 'photo'],
+            'filename': ['название', 'name', 'артикул', 'sku', 'код']
+        }
+        
+        for position, keywords in keyword_mapping.items():
+            for keyword in keywords:
+                if any(keyword in col for col in column_names):
+                    # Находим оригинальное название колонки
+                    for original_col in df.columns:
+                        if keyword in str(original_col).lower():
+                            suggestions[position] = original_col
+                            break
+                    if suggestions[position]:
+                        break
+        
+        return suggestions
+
+# ============================
+# ОСНОВНОЙ ПРОЦЕССОР
+# ============================
+class InfographicGenerator:
+    """Основной класс для генерации инфографики"""
+    
+    def __init__(self):
+        self.image_processor = ImageProcessor()
+        self.excel_processor = ExcelProcessor()
+    
+    def process_single_row(self, row, column_mapping, template_id, 
+                          export_settings, row_index=0):
+        """Обработка одной строки данных"""
+        try:
+            # Извлекаем данные по маппингу
+            text_data = {
+                'top_left': row.get(column_mapping.get('top_left'), ''),
+                'top_right': row.get(column_mapping.get('top_right'), ''),
+                'bottom_left': row.get(column_mapping.get('bottom_left'), ''),
+                'bottom_right': row.get(column_mapping.get('bottom_right'), '')
+            }
+            
+            image_url = row.get(column_mapping.get('image_url'), '')
+            
+            # Генерация имени файла
+            filename_source = row.get(column_mapping.get('filename'), '')
+            if filename_source:
+                filename = self.generate_filename(filename_source, row_index)
+            else:
+                filename = f"infographic_{row_index:06d}"
+            
+            # Загрузка изображения
+            if not image_url or not isinstance(image_url, str):
+                return {
+                    'row_index': row_index,
+                    'status': 'error',
+                    'message': 'Некорректный URL изображения',
+                    'filename': filename
+                }
+            
+            img = self.image_processor.load_image_from_url(
+                image_url, 
+                timeout=export_settings.get('timeout', 15)
+            )
+            
+            if img is None:
+                return {
+                    'row_index': row_index,
+                    'status': 'error',
+                    'message': 'Не удалось загрузить изображение',
+                    'filename': filename
+                }
+            
+            # Изменение размера
+            if export_settings.get('resize', True):
+                img = self.image_processor.resize_image(
+                    img, 
+                    export_settings.get('target_size', 1200)
+                )
+            
+            # Добавление текста
+            processed_img = self.image_processor.add_text_to_image(
+                img, 
+                text_data, 
+                template_id
+            )
+            
+            # Сохранение
+            output_dir = st.session_state.output_dir
+            format_ext = export_settings.get('format', 'PNG').lower()
+            filepath = os.path.join(output_dir, f"{filename}.{format_ext}")
+            
+            success = self.image_processor.save_image(
+                processed_img,
+                filepath,
+                format=export_settings.get('format', 'PNG'),
+                quality=export_settings.get('quality', 85)
+            )
+            
+            if success:
+                return {
+                    'row_index': row_index,
+                    'status': 'success',
+                    'filename': filename,
+                    'filepath': filepath,
+                    'image_url': image_url
+                }
+            else:
+                return {
+                    'row_index': row_index,
+                    'status': 'error',
+                    'message': 'Ошибка сохранения файла',
+                    'filename': filename
+                }
+                
+        except Exception as e:
+            logger.error(f"Ошибка обработки строки {row_index}: {e}")
+            return {
+                'row_index': row_index,
+                'status': 'error',
+                'message': str(e),
+                'filename': f"row_{row_index}"
+            }
+    
+    def generate_filename(self, source, index):
+        """Генерация имени файла из исходной строки"""
+        # Удаляем запрещенные символы
+        filename = re.sub(r'[<>:"/\\|?*]', '', str(source))
+        
+        # Заменяем пробелы на подчеркивания
+        filename = filename.replace(' ', '_')
+        
+        # Ограничиваем длину
+        if len(filename) > 100:
+            filename = filename[:100]
+        
+        # Добавляем индекс если имя пустое
+        if not filename:
+            filename = f"item_{index:06d}"
+        
+        return filename
+    
+    def process_batch(self, df, start_idx, end_idx, column_mapping, 
+                     template_id, export_settings, processing_settings):
+        """Пакетная обработка данных"""
+        results = []
+        total_rows = end_idx - start_idx + 1
+        
+        # Создаем директорию для результатов
+        os.makedirs(st.session_state.output_dir, exist_ok=True)
+        
+        # Используем ThreadPoolExecutor для параллельной обработки
+        max_workers = min(processing_settings.get('max_workers', 8), total_rows)
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            
+            for idx in range(start_idx, end_idx + 1):
+                row = df.iloc[idx]
+                future = executor.submit(
+                    self.process_single_row,
+                    row,
+                    column_mapping,
+                    template_id,
+                    export_settings,
+                    idx
+                )
+                futures.append(future)
+            
+            # Собираем результаты
+            completed = 0
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    results.append(result)
+                    
+                    completed += 1
+                    progress = completed / total_rows
+                    
+                    # Обновляем прогресс бар
+                    if 'progress_bar' in st.session_state:
+                        st.session_state.progress_bar.progress(progress)
+                    
+                    # Обновляем статус
+                    if 'status_text' in st.session_state:
+                        success_count = sum(1 for r in results if r['status'] == 'success')
+                        st.session_state.status_text.text(
+                            f"Обработано: {completed}/{total_rows} | "
+                            f"Успешно: {success_count} | "
+                            f"Ошибок: {completed - success_count}"
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка в потоке обработки: {e}")
+                    results.append({
+                        'row_index': completed,
+                        'status': 'error',
+                        'message': str(e)
+                    })
+        
+        return results
+    
+    def create_zip_archive(self, results, batch_name=None):
+        """Создание ZIP архива с результатами"""
+        if not batch_name:
+            batch_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        zip_filename = f"infographics_{batch_name}.zip"
+        zip_path = os.path.join(st.session_state.output_dir, zip_filename)
+        
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for result in results:
+                    if result['status'] == 'success' and 'filepath' in result:
+                        if os.path.exists(result['filepath']):
+                            arcname = os.path.basename(result['filepath'])
+                            zipf.write(result['filepath'], arcname)
+            
+            # Создаем CSV с результатами
+            results_df = pd.DataFrame(results)
+            csv_path = os.path.join(st.session_state.output_dir, f"results_{batch_name}.csv")
+            results_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+            
+            # Добавляем CSV в архив
+            with zipfile.ZipFile(zip_path, 'a', zipfile.ZIP_DEFLATED) as zipf:
+                zipf.write(csv_path, os.path.basename(csv_path))
+            
+            return zip_path, csv_path
+            
+        except Exception as e:
+            logger.error(f"Ошибка создания ZIP архива: {e}")
+            return None, None
+
+# ============================
+# ИНТЕРФЕЙС ПОЛЬЗОВАТЕЛЯ
+# ============================
+class UIComponents:
+    """Класс для компонентов пользовательского интерфейса"""
+    
+    @staticmethod
+    def render_sidebar():
+        """Отрисовка боковой панели"""
+        with st.sidebar:
+            st.title("⚙️ Настройки")
+            
+            # Загрузка файла
+            st.subheader("📁 Загрузка данных")
+            uploaded_file = st.file_uploader(
+                "Выберите Excel файл",
+                type=['xlsx', 'xls'],
+                help="Файл должен содержать данные о товарах"
+            )
+            
+            if uploaded_file:
+                if (st.session_state.uploaded_file_name != uploaded_file.name or 
+                    st.session_state.df is None):
+                    
+                    with st.spinner("Загрузка файла..."):
+                        df = ExcelProcessor.read_excel_file(uploaded_file)
+                        if df is not None:
+                            st.session_state.df = df
+                            st.session_state.uploaded_file_name = uploaded_file.name
+                            
+                            # Автоматическое предложение колонок
+                            suggestions = ExcelProcessor.get_column_suggestions(df)
+                            st.session_state.column_mapping = suggestions
+                            
+                            st.success(f"✅ Загружено {len(df)} строк")
+                
+                # Предпросмотр данных
+                with st.expander("👁️ Предпросмотр данных", expanded=False):
+                    if st.session_state.df is not None:
+                        preview_rows = st.slider("Строк для предпросмотра", 5, 50, 10)
+                        st.dataframe(st.session_state.df.head(preview_rows))
+            
+            # Выбор шаблона
+            st.subheader("🎨 Шаблон инфографики")
+            template_options = InfographicTemplates.get_template_names()
+            
+            selected_template = st.selectbox(
+                "Выберите шаблон",
+                options=template_options,
+                format_func=lambda x: f"{InfographicTemplates.TEMPLATES[x]['name']} - "
+                                    f"{InfographicTemplates.TEMPLATES[x]['description']}",
+                index=template_options.index(st.session_state.current_template)
+            )
+            st.session_state.current_template = selected_template
+            
+            # Превью шаблона
+            template = InfographicTemplates.TEMPLATES[selected_template]
+            st.caption(f"**Тип:** {template['name']}")
+            st.caption(f"**Описание:** {template['description']}")
+            
+            # Настройки экспорта
+            st.subheader("💾 Настройки экспорта")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                export_format = st.selectbox(
+                    "Формат",
+                    ["PNG", "JPEG", "WebP"],
+                    index=["PNG", "JPEG", "WebP"].index(
+                        st.session_state.export_settings['format']
+                    )
+                )
+                st.session_state.export_settings['format'] = export_format
+            
+            with col2:
+                quality = st.slider(
+                    "Качество",
+                    50, 100, 
+                    st.session_state.export_settings['quality']
+                )
+                st.session_state.export_settings['quality'] = quality
+            
+            st.session_state.export_settings['resize'] = st.checkbox(
+                "Изменять размер", 
+                st.session_state.export_settings['resize']
+            )
+            
+            if st.session_state.export_settings['resize']:
+                target_size = st.number_input(
+                    "Целевой размер (px)",
+                    500, 4000,
+                    st.session_state.export_settings['target_size']
+                )
+                st.session_state.export_settings['target_size'] = target_size
+            
+            # Настройки обработки
+            st.subheader("⚡ Настройки обработки")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                batch_size = st.number_input(
+                    "Размер партии",
+                    1, 10000,
+                    st.session_state.processing_settings['batch_size']
+                )
+                st.session_state.processing_settings['batch_size'] = batch_size
+            
+            with col2:
+                max_workers = st.number_input(
+                    "Максимум потоков",
+                    1, 32,
+                    st.session_state.processing_settings['max_workers']
+                )
+                st.session_state.processing_settings['max_workers'] = max_workers
+            
+            st.session_state.processing_settings['timeout'] = st.number_input(
+                "Таймаут (сек)",
+                5, 60,
+                st.session_state.processing_settings['timeout']
+            )
+            
+            st.session_state.processing_settings['retry_count'] = st.number_input(
+                "Повторные попытки",
+                0, 5,
+                st.session_state.processing_settings['retry_count']
+            )
+            
+            # Информация о системе
+            st.divider()
+            st.caption(f"Обработано: {st.session_state.processed_count} изображений")
+            st.caption(f"Версия: 3.0 (Excel)")
+    
+    @staticmethod
+    def render_column_mapping():
+        """Отрисовка настройки маппинга колонок"""
+        if st.session_state.df is not None:
+            st.subheader("📊 Настройка маппинга колонок")
+            st.info("Выберите, какие колонки из файла соответствуют элементам инфографики")
+            
+            available_columns = st.session_state.df.columns.tolist()
+            
+            # Создаем колонки для выбора
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.session_state.column_mapping['top_left'] = st.selectbox(
+                    "Верхний левый угол (Название)",
+                    available_columns,
+                    index=available_columns.index(
+                        st.session_state.column_mapping.get('top_left', available_columns[0])
+                    ) if st.session_state.column_mapping.get('top_left') in available_columns else 0
+                )
+                
+                st.session_state.column_mapping['top_right'] = st.selectbox(
+                    "Верхний правый угол (Цена)",
+                    available_columns,
+                    index=available_columns.index(
+                        st.session_state.column_mapping.get('top_right', available_columns[1])
+                    ) if st.session_state.column_mapping.get('top_right') in available_columns and len(available_columns) > 1 else min(1, len(available_columns)-1)
+                )
+                
+                st.session_state.column_mapping['image_url'] = st.selectbox(
+                    "URL изображений",
+                    available_columns,
+                    index=available_columns.index(
+                        st.session_state.column_mapping.get('image_url', available_columns[2])
+                    ) if st.session_state.column_mapping.get('image_url') in available_columns and len(available_columns) > 2 else min(2, len(available_columns)-1)
+                )
+            
+            with col2:
+                st.session_state.column_mapping['bottom_left'] = st.selectbox(
+                    "Нижний левый угол (Характеристики)",
+                    available_columns,
+                    index=available_columns.index(
+                        st.session_state.column_mapping.get('bottom_left', available_columns[3])
+                    ) if st.session_state.column_mapping.get('bottom_left') in available_columns and len(available_columns) > 3 else min(3, len(available_columns)-1)
+                )
+                
+                st.session_state.column_mapping['bottom_right'] = st.selectbox(
+                    "Нижний правый угол (Скидка/Детали)",
+                    available_columns,
+                    index=available_columns.index(
+                        st.session_state.column_mapping.get('bottom_right', available_columns[4])
+                    ) if st.session_state.column_mapping.get('bottom_right') in available_columns and len(available_columns) > 4 else min(4, len(available_columns)-1)
+                )
+                
+                st.session_state.column_mapping['filename'] = st.selectbox(
+                    "Имена файлов (источник)",
+                    available_columns,
+                    index=available_columns.index(
+                        st.session_state.column_mapping.get('filename', available_columns[0])
+                    ) if st.session_state.column_mapping.get('filename') in available_columns else 0
+                )
+    
+    @staticmethod
+    def render_preview_tab(generator):
+        """Отрисовка вкладки предпросмотра"""
+        if st.session_state.df is None:
+            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
+            return
+        
+        st.header("🎯 Предпросмотр и тестирование")
+        
+        # Выбор строки для теста
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            test_row_idx = st.number_input(
+                "Номер строки для тестирования",
+                min_value=0,
+                max_value=len(st.session_state.df)-1,
+                value=0
+            )
+        
+        with col2:
+            timeout = st.number_input(
+                "Таймаут (сек)",
+                5, 60,
+                st.session_state.export_settings.get('timeout', 15)
+            )
+        
+        with col3:
+            st.write("")  # Пустое место для выравнивания
+            st.write("")
+            test_button = st.button("🚀 Запустить тест", type="primary")
+        
+        if test_button and test_row_idx < len(st.session_state.df):
+            with st.spinner("Выполнение теста..."):
+                row = st.session_state.df.iloc[test_row_idx]
+                
+                # Формируем текстовые данные
+                text_data = {
+                    'top_left': str(row.get(st.session_state.column_mapping.get('top_left', ''), '')),
+                    'top_right': str(row.get(st.session_state.column_mapping.get('top_right', ''), '')),
+                    'bottom_left': str(row.get(st.session_state.column_mapping.get('bottom_left', ''), '')),
+                    'bottom_right': str(row.get(st.session_state.column_mapping.get('bottom_right', ''), ''))
+                }
+                
+                image_url = str(row.get(st.session_state.column_mapping.get('image_url', ''), ''))
+                
+                # Показываем исходные данные
+                with st.expander("📋 Исходные данные строки"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.json(text_data)
+                    with col2:
+                        st.code(f"URL: {image_url}")
+                
+                if image_url and image_url.startswith(('http://', 'https://')):
+                    # Загружаем изображение
+                    img = generator.image_processor.load_image_from_url(image_url, timeout)
+                    
+                    if img:
+                        # Обрабатываем изображение
+                        processed_img = generator.image_processor.add_text_to_image(
+                            img.copy(),
+                            text_data,
+                            st.session_state.current_template
+                        )
+                        
+                        # Показываем результат
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.subheader("📷 Оригинал")
+                            st.image(img, use_column_width=True)
+                            st.caption(f"Размер: {img.width}×{img.height}")
+                        
+                        with col2:
+                            st.subheader("🎨 С инфографикой")
+                            st.image(processed_img, use_column_width=True)
+                            st.caption(f"Шаблон: {st.session_state.current_template}")
+                        
+                        # Кнопка скачивания тестового файла
+                        buffered = BytesIO()
+                        format_ext = st.session_state.export_settings['format'].lower()
+                        
+                        if st.session_state.export_settings['format'] == 'JPEG':
+                            processed_img.convert('RGB').save(
+                                buffered, 
+                                format='JPEG',
+                                quality=st.session_state.export_settings['quality']
+                            )
+                            mime_type = 'image/jpeg'
+                        elif st.session_state.export_settings['format'] == 'WEBP':
+                            processed_img.save(
+                                buffered,
+                                format='WEBP',
+                                quality=st.session_state.export_settings['quality']
+                            )
+                            mime_type = 'image/webp'
+                        else:
+                            processed_img.save(buffered, format='PNG')
+                            mime_type = 'image/png'
+                        
+                        st.download_button(
+                            label="💾 Скачать тестовое изображение",
+                            data=buffered.getvalue(),
+                            file_name=f"test_preview.{format_ext}",
+                            mime=mime_type
+                        )
+                        
+                        # Сохраняем для возможного повторного использования
+                        st.session_state.preview_image = processed_img
+                        
+                    else:
+                        st.error("❌ Не удалось загрузить изображение. Проверьте URL.")
+                else:
+                    st.warning("⚠️ Некорректный URL изображения")
+    
+    @staticmethod
+    def render_processing_tab(generator):
+        """Отрисовка вкладки обработки"""
+        if st.session_state.df is None:
+            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
+            return
+        
+        st.header("⚡ Массовая обработка")
+        
+        total_rows = len(st.session_state.df)
+        st.info(f"📊 Готово к обработке: {total_rows} строк")
+        
+        # Настройки обработки
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            start_idx = st.number_input(
+                "Начать с строки",
+                0, total_rows-1, 0
+            )
+        
+        with col2:
+            end_idx = st.number_input(
+                "Закончить на строке",
+                start_idx, total_rows-1,
+                min(start_idx + st.session_state.processing_settings['batch_size'] - 1, total_rows-1)
+            )
+        
+        with col3:
+            st.write("")
+            st.write("")
+            process_button = st.button("🔄 Начать обработку", type="primary", use_container_width=True)
+        
+        # Информация о партии
+        batch_size = end_idx - start_idx + 1
+        if batch_size > 0:
+            st.success(f"✅ Будет обработано: {batch_size} строк")
+        
+        # Обработка
+        if process_button and batch_size > 0:
+            # Сброс статистики
+            st.session_state.processing_stats = {
+                'total': batch_size,
+                'success': 0,
+                'failed': 0,
+                'start_time': datetime.now(),
+                'end_time': None
+            }
+            
+            # Создаем элементы интерфейса для прогресса
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            results_placeholder = st.empty()
+            
+            st.session_state.progress_bar = progress_bar
+            st.session_state.status_text = status_text
+            
+            # Запускаем обработку
+            with st.spinner("Запуск обработки..."):
+                results = generator.process_batch(
+                    st.session_state.df,
+                    start_idx,
+                    end_idx,
+                    st.session_state.column_mapping,
+                    st.session_state.current_template,
+                    {
+                        **st.session_state.export_settings,
+                        'timeout': st.session_state.processing_settings['timeout']
+                    },
+                    st.session_state.processing_settings
+                )
+            
+            # Обновляем статистику
+            success_count = sum(1 for r in results if r['status'] == 'success')
+            failed_count = len(results) - success_count
+            
+            st.session_state.processing_stats.update({
+                'success': success_count,
+                'failed': failed_count,
+                'end_time': datetime.now()
+            })
+            
+            st.session_state.processed_count += success_count
+            st.session_state.batch_results = results
+            
+            # Показываем результаты
+            with results_placeholder.container():
+                st.success(f"✅ Обработка завершена!")
+                
+                # Сводка
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Успешно", success_count)
+                with col2:
+                    st.metric("С ошибками", failed_count)
+                with col3:
+                    if st.session_state.processing_stats['start_time'] and \
+                       st.session_state.processing_stats['end_time']:
+                        duration = (
+                            st.session_state.processing_stats['end_time'] - 
+                            st.session_state.processing_stats['start_time']
+                        ).total_seconds()
+                        st.metric("Время", f"{duration:.1f} сек")
+                
+                # Детали ошибок
+                if failed_count > 0:
+                    with st.expander("📋 Детали ошибок"):
+                        error_results = [r for r in results if r['status'] == 'error']
+                        error_df = pd.DataFrame(error_results)
+                        st.dataframe(error_df[['row_index', 'message']])
+                
+                # Создание архива
+                if success_count > 0:
+                    with st.spinner("Создание архива..."):
+                        zip_path, csv_path = generator.create_zip_archive(results)
+                        
+                        if zip_path and os.path.exists(zip_path):
+                            # Кнопки скачивания
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                with open(zip_path, 'rb') as f:
+                                    st.download_button(
+                                        label="📦 Скачать ZIP архив",
+                                        data=f.read(),
+                                        file_name=os.path.basename(zip_path),
+                                        mime="application/zip",
+                                        use_container_width=True
+                                    )
+                            
+                            with col2:
+                                with open(csv_path, 'rb') as f:
+                                    st.download_button(
+                                        label="📊 Скачать отчет (CSV)",
+                                        data=f.read(),
+                                        file_name=os.path.basename(csv_path),
+                                        mime="text/csv",
+                                        use_container_width=True
+                                    )
+                            
+                            # Информация о файлах
+                            zip_size = os.path.getsize(zip_path) / (1024 * 1024)
+                            st.info(f"Размер архива: {zip_size:.2f} MB")
+    
+    @staticmethod
+    def render_statistics_tab():
+        """Отрисовка вкладки статистики"""
+        st.header("📊 Статистика и аналитика")
+        
+        if st.session_state.processed_count == 0:
+            st.info("📈 Статистика появится после обработки данных")
+            return
+        
+        # Основные метрики
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Всего обработано", st.session_state.processed_count)
+        
+        with col2:
+            if st.session_state.batch_results:
+                success_rate = (
+                    sum(1 for r in st.session_state.batch_results if r['status'] == 'success') /
+                    len(st.session_state.batch_results) * 100
+                )
+                st.metric("Успешность", f"{success_rate:.1f}%")
+        
+        with col3:
+            st.metric("Текущий шаблон", 
+                     InfographicTemplates.TEMPLATES[st.session_state.current_template]['name'])
+        
+        with col4:
+            st.metric("Формат экспорта", st.session_state.export_settings['format'])
+        
+        # Графики и детальная статистика
+        if st.session_state.batch_results:
+            st.subheader("📈 Детальная статистика последней обработки")
+            
+            # Конвертируем в DataFrame
+            results_df = pd.DataFrame(st.session_state.batch_results)
+            
+            # Группировка по статусам
+            if 'status' in results_df.columns:
+                status_counts = results_df['status'].value_counts()
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.bar_chart(status_counts)
+                
+                with col2:
+                    st.dataframe(status_counts)
+            
+            # Время обработки
+            if (st.session_state.processing_stats['start_time'] and 
+                st.session_state.processing_stats['end_time']):
+                
+                duration = (
+                    st.session_state.processing_stats['end_time'] - 
+                    st.session_state.processing_stats['start_time']
+                ).total_seconds()
+                
+                if duration > 0 and len(results_df) > 0:
+                    speed = len(results_df) / duration
+                    st.metric("Скорость обработки", f"{speed:.2f} изобр/сек")
+    
+    @staticmethod
+    def render_instructions_tab():
+        """Отрисовка вкладки инструкций"""
+        st.header("📚 Инструкция по использованию")
+        
+        with st.expander("📊 Подготовка Excel файла", expanded=True):
+            st.markdown("""
+            ### Требования к Excel файлу:
+            
+            1. **Формат файла**: .xlsx или .xls
+            2. **Первая строка**: должна содержать заголовки колонок
+            3. **Обязательные данные**:
+               - Названия товаров
+               - URL изображений (прямые ссылки)
+               - Цены и характеристики
+            
+            ### Рекомендуемая структура:
+            ```
+            | Название      | URL картинки                  | Цена     | Характеристики      | Скидка |
+            |---------------|-------------------------------|----------|---------------------|--------|
+            | Смартфон Xiaomi | https://example.com/phone.jpg | 24 999 ₽ | 128GB, 8GB RAM     | -17%   |
+            | Наушники Sony  | https://example.com/hp.jpg    | 8 499 ₽  | Bluetooth 5.0      | -23%   |
+            ```
+            
+            ### Как получить прямые ссылки на изображения:
+            - **Маркетплейсы**: Правая кнопка → "Копировать адрес изображения"
+            - **Google Drive**: Измените ссылку на: `https://drive.google.com/uc?id=ID_ФАЙЛА`
+            - **Свои изображения**: Загрузите на хостинг изображений
+            """)
+        
+        with st.expander("⚙️ Настройка маппинга колонок"):
+            st.markdown("""
+            ### Что такое маппинг колонок?
+            Это соответствие между колонками в вашем Excel файле и элементами инфографики.
+            
+            ### Стандартный маппинг:
+            - **Верхний левый угол** → Название товара
+            - **Верхний правый угол** → Цена
+            - **Нижний левый угол** → Характеристики
+            - **Нижний правый угол** → Скидка или доп. информация
+            - **URL изображений** → Колонка с прямыми ссылками
+            - **Имена файлов** → Колонка для генерации имен файлов
+            
+            ### Советы:
+            1. Используйте кнопку "Автоподбор" для автоматического определения колонок
+            2. Тестируйте маппинг в режиме предпросмотра
+            3. Меняйте колонки для разных типов товаров
+            """)
+        
+        with st.expander("🎨 Выбор шаблона"):
+            st.markdown("""
+            ### Доступные шаблоны:
+            
+            1. **📋 Стандартный** 
+               - Для большинства товаров
+               - Универсальный дизайн
+               - Хорошая читаемость
+            
+            2. **⭐ Премиум**
+               - Для люксовых товаров
+               - Сдержанный дизайн
+               - Акцент на бренде
+            
+            3. **🔥 Акционный**
+               - Для распродаж
+               - Яркие цвета
+               - Крупный текст
+            
+            4. **📱 Вертикальный**
+               - Для Instagram Stories
+               - Вертикальная компоновка
+               - Мобильная оптимизация
+            
+            ### Как выбрать:
+            1. Протестируйте все шаблоны на разных товарах
+            2. Учитывайте целевую аудиторию
+            3. Следите за читаемостью текста
+            """)
+        
+        with st.expander("⚡ Оптимизация скорости обработки"):
+            st.markdown("""
+            ### Рекомендации по настройкам:
+            
+            | Объем | Потоки | Размер партии | Таймаут |
+            |-------|--------|---------------|---------|
+            | До 100 | 4-8    | 50            | 15 сек  |
+            | 100-1000 | 8-16  | 100-200       | 15 сек  |
+            | 1000+ | 16-32   | 200-500       | 10 сек  |
+            
+            ### Что делать при ошибках:
+            1. **Медленная загрузка** → Увеличьте таймаут
+            2. **Ошибки памяти** → Уменьшите размер партии
+            3. **Блокировка запросов** → Уменьшите количество потоков
+            4. **Плохое качество** → Увеличьте качество экспорта
+            
+            ### Оптимальные настройки экспорта:
+            - **Для сайтов**: JPEG, качество 85%, размер 1200px
+            - **Для соцсетей**: PNG или WebP, качество 90%
+            - **Для печати**: PNG, качество 100%, размер 3000px
+            """)
+        
+        with st.expander("❌ Решение проблем"):
+            st.markdown("""
+            ### Частые проблемы и решения:
+            
+            1. **Не загружается Excel файл**
+               - Проверьте формат (.xlsx или .xls)
+               - Убедитесь, что файл не поврежден
+               - Попробуйте сохранить файл заново
+            
+            2. **Не загружаются изображения**
+               - Проверьте URL в браузере
+               - Убедитесь, что ссылки прямые
+               - Для Google Drive используйте правильный формат ссылки
+            
+            3. **Текст не виден на изображении**
+               - Выберите другой шаблон
+               - Уменьшите длину текста
+               - Проверьте контрастность в предпросмотре
+            
+            4. **Медленная обработка**
+               - Уменьшите количество потоков
+               - Уменьшите размер партии
+               - Проверьте скорость интернета
+            
+            5. **Ошибки памяти**
+               - Закройте другие приложения
+               - Уменьшите размер партии
+               - Уменьшите целевую размер изображений
+            """)
+
+# ============================
+# ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
+# ============================
+def main():
+    """Основная функция приложения"""
+    
+    # Заголовок приложения
+    st.title("🎯 Генератор Инфографики v3.0")
+    st.markdown("### Автоматическое создание инфографики из Excel файлов")
+    st.markdown("---")
+    
+    # Инициализация классов
+    generator = InfographicGenerator()
+    ui = UIComponents()
+    
+    # Боковая панель
+    ui.render_sidebar()
+    
+    # Основное содержимое
+    if st.session_state.df is not None:
+        # Вкладки
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Настройка",
+            "🎯 Предпросмотр", 
+            "⚡ Обработка",
+            "📈 Статистика",
+            "📚 Инструкция"
+        ])
+        
+        with tab1:
+            ui.render_column_mapping()
+            
+            # Дополнительные настройки имен файлов
+            st.subheader("🏷️ Настройка имен файлов")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                add_prefix = st.checkbox("Добавить префикс", value=False)
+                if add_prefix:
+                    prefix = st.text_input("Префикс", value="product_")
+                    st.session_state.export_settings['prefix'] = prefix
+            
+            with col2:
+                add_suffix = st.checkbox("Добавить суффикс", value=False)
+                if add_suffix:
+                    suffix = st.text_input("Суффикс", value="_promo")
+                    st.session_state.export_settings['suffix'] = suffix
+            
+            # Автоподбор колонок
+            if st.button("🔍 Автоподбор колонок", type="secondary"):
+                suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
+                st.session_state.column_mapping = suggestions
+                st.success("✅ Колонки автоматически подобраны!")
+                st.rerun()
+        
+        with tab2:
+            ui.render_preview_tab(generator)
+        
+        with tab3:
+            ui.render_processing_tab(generator)
+        
+        with tab4:
+            ui.render_statistics_tab()
+        
+        with tab5:
+            ui.render_instructions_tab()
+    
+    else:
+        # Экран приветствия
+        st.markdown("""
+        ## 🚀 Добро пожаловать в Генератор Инфографики!
+        
+        **Превратите ваши Excel данные в профессиональную инфографику за несколько кликов.**
+        
+        ### 📋 Как начать:
+        
+        1. **Подготовьте Excel файл** с данными о товарах
+        2. **Загрузите файл** в боковой панели слева
+        3. **Настройте соответствие** колонок элементам инфографики
+        4. **Выберите шаблон** дизайна
+        5. **Протестируйте** на одном товаре
+        6. **Запустите массовую обработку**
+        
+        ### ⚡ Основные возможности:
+        
+        - ✅ **Поддержка Excel** (.xlsx, .xls)
+        - ✅ **4 готовых шаблона** дизайна
+        - ✅ **Автоподбор** колонок
+        - ✅ **Пакетная обработка** с многопоточностью
+        - ✅ **Экспорт** в PNG, JPEG, WebP
+        - ✅ **Автоматическое создание ZIP** архива
+        - ✅ **Подробная статистика** обработки
+        
+        ### 🎯 Идеально для:
+        
+        - 🛍️ **Интернет-магазины** - карточки товаров
+        - 📱 **Соцсети** - посты для Instagram, Facebook
+        - 📊 **Маркетплейсы** - Yandex Market, Ozon, Wildberries
+        - 🏢 **B2B компании** - каталоги продукции
+        - 🏷️ **Распродажи** - акционные баннеры
+        
+        ---
+        
+        **📁 Подготовьте ваш Excel файл и начните создавать профессиональную инфографику уже сегодня!**
+        """)
+        
+        # Пример структуры файла
+        with st.expander("📋 Пример структуры Excel файла"):
+            example_data = {
+                "Название товара": ["Смартфон Xiaomi Redmi Note 12", "Наушники Sony WH-1000XM5"],
+                "URL изображения": [
+                    "https://example.com/xiaomi.jpg",
+                    "https://example.com/sony.jpg"
+                ],
+                "Цена": ["24 999 ₽", "34 999 ₽"],
+                "Старая цена": ["29 999 ₽", "39 999 ₽"],
+                "Характеристики": ["128GB, 8GB RAM, AMOLED", "Шумоподавление, 30ч работы"],
+                "Скидка": ["-17%", "-13%"],
+                "Доставка": ["Бесплатно", "1-2 дня"]
+            }
+            
+            example_df = pd.DataFrame(example_data)
+            st.dataframe(example_df, use_container_width=True)
+            
+            # Кнопка для скачивания шаблона
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                example_df.to_excel(writer, index=False, sheet_name='Товары')
+            
+            st.download_button(
+                label="📥 Скачать шаблон Excel файла",
+                data=buffer.getvalue(),
+                file_name="шаблон_товары.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+    # Футер
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #666; font-size: 0.9em;'>
+        <p>Генератор Инфографики v3.0 | Поддержка Excel файлов | 
+        Обработано изображений: <b>{processed_count}</b></p>
+        <p>Для вопросов и предложений: support@example.com</p>
+    </div>
+    """.format(processed_count=st.session_state.processed_count), unsafe_allow_html=True)
+
+# ============================
+# ЗАПУСК ПРИЛОЖЕНИЯ
+# ============================
 if __name__ == "__main__":
-    run()
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Критическая ошибка в приложении: {e}", exc_info=True)
+        st.error(f"⚠️ Произошла критическая ошибка: {str(e)}")
+        st.info("Попробуйте обновить страницу или перезапустить приложение.")
