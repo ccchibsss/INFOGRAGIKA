@@ -765,10 +765,23 @@ class ImageProcessor:
     @staticmethod
     def load_image_from_url(url: str, timeout: int = 30, retries: int = 3) -> Optional[Image.Image]:
         """Загрузка изображения по URL с повторными попытками"""
-        if not url or not isinstance(url, str) or not url.strip():
+        if not url or not isinstance(url, str):
             return None
         
         url = url.strip()
+        
+        # Проверяем валидность URL
+        if len(url) < 10 or not (url.startswith('http') or url.startswith('//') or '.' in url):
+            logger.warning(f"Некорректный URL: {url}")
+            return None
+        
+        # Нормализация URL
+        if url.startswith('//'):
+            url = 'https:' + url
+        elif url.startswith('www.'):
+            url = 'https://' + url
+        elif not url.startswith('http'):
+            url = 'https://' + url
         
         # Проверяем кэш
         if hasattr(st.session_state, 'image_cache') and st.session_state.image_cache:
@@ -778,23 +791,45 @@ class ImageProcessor:
                 if cached_img is not None:
                     return cached_img.copy()
         
+        # Пытаемся загрузить
         for attempt in range(retries + 1):
             try:
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                    'Referer': 'https://www.google.com/'
                 }
                 
-                response = requests.get(url, timeout=timeout, headers=headers)
+                # Добавляем таймаут для медленных соединений
+                response = requests.get(url, timeout=timeout, headers=headers, verify=True)
                 response.raise_for_status()
                 
+                # Проверяем, что это изображение
                 content_type = response.headers.get('content-type', '').lower()
                 if 'image' not in content_type:
-                    logger.warning(f"URL не возвращает изображение: {content_type}")
-                    if attempt == retries:
-                        return None
-                    time.sleep(1)
-                    continue
+                    # Иногда серверы не отправляют content-type, проверяем по содержимому
+                    if len(response.content) < 100:
+                        logger.warning(f"Слишком маленький ответ: {len(response.content)} байт")
+                        continue
+                    
+                    # Пробуем определить по первым байтам
+                    magic_numbers = {
+                        b'\xff\xd8\xff': 'jpeg',
+                        b'\x89PNG': 'png',
+                        b'GIF8': 'gif',
+                        b'RIFF': 'webp'
+                    }
+                    
+                    is_image = False
+                    content_start = response.content[:20]
+                    for magic in magic_numbers:
+                        if content_start.startswith(magic):
+                            is_image = True
+                            break
+                    
+                    if not is_image:
+                        logger.warning(f"Не изображение: content-type={content_type}")
+                        continue
                 
                 img = Image.open(BytesIO(response.content))
                 
@@ -808,11 +843,17 @@ class ImageProcessor:
                 cache_key = hashlib.md5(url.encode()).hexdigest()
                 st.session_state.image_cache[cache_key] = img.copy()
                 
-                logger.info(f"Изображение загружено: {url}")
+                logger.info(f"Изображение загружено: {url[:50]}...")
                 return img
                 
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Ошибка сети при загрузке {url[:50]}...: {e}")
+                if attempt == retries:
+                    return None
+                time.sleep(1 * (attempt + 1))  # Экспоненциальная задержка
+            
             except Exception as e:
-                logger.error(f"Ошибка загрузки изображения {url}: {e}")
+                logger.error(f"Неожиданная ошибка при загрузке {url[:50]}...: {e}")
                 if attempt == retries:
                     return None
                 time.sleep(1)
@@ -1277,7 +1318,7 @@ class ExcelProcessor:
         return df
 
 # ============================
-# ОСНОВНОЙ ПРОЦЕССОР
+# ОСНОВНОЙ ПРОЦЕССОР С ИСПРАВЛЕННОЙ ПРОБЛЕМОЙ URL
 # ============================
 class InfographicGenerator:
     """Основной класс для генерации инфографики"""
@@ -1286,57 +1327,116 @@ class InfographicGenerator:
         self.image_processor = ImageProcessor()
     
     def process_single_row(self, row: pd.Series, row_index: int) -> Dict:
-        """Обработка одной строки"""
+        """Обработка одной строки - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
         try:
             # Гарантируем инициализацию всех необходимых атрибутов
             ensure_session_state_initialized()
             
+            # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Преобразуем pd.Series в словарь для безопасности ===
+            # Это решает проблему потери данных при передаче между потоками
+            row_dict = {}
+            try:
+                # Пытаемся получить все значения через to_dict
+                if hasattr(row, 'to_dict'):
+                    row_dict = row.to_dict()
+                else:
+                    # Альтернативный способ
+                    for col in row.index:
+                        row_dict[col] = row[col]
+            except Exception as e:
+                logger.warning(f"Ошибка преобразования строки {row_index} в словарь: {e}")
+                # Используем оригинальную Series как fallback
+                row_dict = dict(row)
+            
             # Получаем column_mapping безопасно
             column_mapping = safe_get_session_state('column_mapping', {})
             
-            # Получаем данные из строки
+            # === ИСПРАВЛЕННАЯ ПРОВЕРКА URL ИЗОБРАЖЕНИЯ ===
+            image_url = None
+            
+            # Получаем имя колонки с URL
+            url_column_name = None
+            if 'image_url' in column_mapping and column_mapping['image_url']:
+                url_column_name = column_mapping['image_url']
+            
+            if url_column_name and url_column_name in row_dict:
+                # Получаем значение из словаря (наиболее надежный способ)
+                url_value = row_dict.get(url_column_name)
+                
+                # Проверяем и очищаем значение
+                if url_value is not None and pd.notna(url_value):
+                    url_str = str(url_value).strip()
+                    
+                    # Расширенная проверка URL
+                    if url_str and len(url_str) > 5:
+                        # Проверяем различные форматы URL
+                        is_valid_url = (
+                            url_str.startswith('http://') or 
+                            url_str.startswith('https://') or
+                            url_str.startswith('//') or  # Протокол-относительные URL
+                            url_str.startswith('www.') or  # URL без протокола
+                            '.' in url_str and any(ext in url_str.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif'])
+                        )
+                        
+                        if is_valid_url:
+                            # Нормализуем URL
+                            if url_str.startswith('//'):
+                                image_url = 'https:' + url_str
+                            elif url_str.startswith('www.'):
+                                image_url = 'https://' + url_str
+                            else:
+                                image_url = url_str
+            
+            # Если URL нет - возвращаем ошибку с деталями
+            if not image_url:
+                error_details = {
+                    'row_index': row_index,
+                    'column': url_column_name,
+                    'value': row_dict.get(url_column_name, 'NOT FOUND') if url_column_name else 'NO COLUMN',
+                    'available_columns': list(row_dict.keys())
+                }
+                logger.warning(f"Нет URL изображения в строке {row_index}: {error_details}")
+                
+                return {
+                    'row_index': row_index,
+                    'status': 'error',
+                    'message': f'Нет URL изображения в колонке "{url_column_name}"',
+                    'debug_info': error_details
+                }
+            
+            # Получаем данные из строки (используем row_dict вместо прямого доступа к row)
             text_data = {}
             for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
                 if position in column_mapping and column_mapping[position]:
                     col = column_mapping[position]
-                    if col in row:
-                        text_data[position] = str(row[col] or '')
+                    if col in row_dict:
+                        value = row_dict[col]
+                        if pd.isna(value):
+                            text_data[position] = ''
+                        else:
+                            text_data[position] = str(value)
                     else:
                         text_data[position] = ''
                 else:
                     text_data[position] = ''
-            
-            # URL основного изображения
-            image_url = ''
-            if 'image_url' in column_mapping and column_mapping['image_url']:
-                col = column_mapping['image_url']
-                if col in row:
-                    image_url = str(row[col] or '')
-            
-            if not image_url:
-                return {
-                    'row_index': row_index,
-                    'status': 'error',
-                    'message': 'Нет URL изображения'
-                }
             
             # URL изображения для наложения
             overlay_url = None
             if ('overlay_image_url' in column_mapping and 
                 column_mapping['overlay_image_url']):
                 col = column_mapping['overlay_image_url']
-                if col in row:
-                    overlay_url = str(row[col] or '')
-                    if overlay_url.lower() in ['', 'nan', 'none']:
+                if col in row_dict and pd.notna(row_dict[col]):
+                    overlay_url = str(row_dict[col]).strip()
+                    if not overlay_url or overlay_url.lower() in ['nan', 'none', '']:
                         overlay_url = None
             
             # Имя файла
             filename = f"item_{row_index:04d}"
             if 'filename' in column_mapping and column_mapping['filename']:
                 col = column_mapping['filename']
-                if col in row:
-                    filename_source = str(row[col] or '')
-                    if filename_source and filename_source.lower() not in ['', 'nan', 'none']:
+                if col in row_dict and pd.notna(row_dict[col]):
+                    filename_source = str(row_dict[col]).strip()
+                    if filename_source:
                         # Очищаем имя файла
                         filename = re.sub(r'[^\w\-_\. ]', '_', filename_source)
                         filename = re.sub(r'\s+', '_', filename)
@@ -1345,15 +1445,22 @@ class InfographicGenerator:
             # Получаем настройки обработки
             processing_settings = safe_get_session_state('processing_settings', {})
             timeout = processing_settings.get('timeout', 30)
+            retries = processing_settings.get('retry_count', 3)
             
             # Загружаем основное изображение
-            main_img = self.image_processor.load_image_from_url(image_url, timeout=timeout)
+            logger.debug(f"Загрузка изображения для строки {row_index}: {image_url[:50]}...")
+            main_img = self.image_processor.load_image_from_url(
+                image_url, 
+                timeout=timeout,
+                retries=retries
+            )
             
             if main_img is None:
                 return {
                     'row_index': row_index,
                     'status': 'error',
-                    'message': 'Не удалось загрузить изображение'
+                    'message': f'Не удалось загрузить изображение из URL',
+                    'url': image_url[:100]
                 }
             
             # Получаем настройки экспорта
@@ -1410,25 +1517,27 @@ class InfographicGenerator:
             )
             
             if success:
+                logger.info(f"Успешно обработана строка {row_index}: {filename}")
                 return {
                     'row_index': row_index,
                     'status': 'success',
                     'filename': filename,
-                    'filepath': filepath
+                    'filepath': filepath,
+                    'url': image_url[:50] + '...'
                 }
             else:
                 return {
                     'row_index': row_index,
                     'status': 'error',
-                    'message': 'Ошибка сохранения'
+                    'message': 'Ошибка сохранения файла'
                 }
                 
         except Exception as e:
-            logger.error(f"Ошибка обработки строки {row_index}: {e}")
+            logger.error(f"Критическая ошибка обработки строки {row_index}: {e}")
             return {
                 'row_index': row_index,
                 'status': 'error',
-                'message': str(e)[:100]
+                'message': f'Критическая ошибка: {str(e)[:100]}'
             }
     
     def process_batch(self, df: pd.DataFrame, start_idx: int, end_idx: int) -> List[Dict]:
@@ -1450,47 +1559,103 @@ class InfographicGenerator:
         
         logger.info(f"Начало обработки {total} строк, потоков: {max_workers}")
         
+        # Собираем статистику ошибок
+        stats = {
+            'total': total,
+            'success': 0,
+            'no_url': 0,
+            'load_failed': 0,
+            'other_errors': 0
+        }
+        
         # Прогресс бар
         progress_bar = st.progress(0)
         status_text = st.empty()
+        stats_text = st.empty()
+        
+        def process_wrapper(idx):
+            """Обертка для обработки одной строки"""
+            try:
+                if idx >= len(df):
+                    return {
+                        'row_index': idx,
+                        'status': 'error',
+                        'message': 'Индекс вне диапазона'
+                    }
+                
+                row = df.iloc[idx]
+                return self.process_single_row(row, idx)
+            except Exception as e:
+                logger.error(f"Ошибка в process_wrapper для строки {idx}: {e}")
+                return {
+                    'row_index': idx,
+                    'status': 'error',
+                    'message': f'Ошибка обертки: {str(e)[:50]}'
+                }
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             
             # Запускаем задачи
             for idx in range(start_idx, end_idx + 1):
-                if idx >= len(df):
-                    continue
-                row = df.iloc[idx]
-                future = executor.submit(self.process_single_row, row, idx)
-                futures.append((future, idx))
+                future = executor.submit(process_wrapper, idx)
+                futures.append(future)
             
-            # Обрабатываем результаты
+            # Обрабатываем результаты по мере завершения
             completed = 0
-            for future, idx in futures:
+            error_messages = []
+            
+            for future in as_completed(futures):
                 try:
-                    timeout = processing_settings.get('timeout', 30)
+                    timeout = processing_settings.get('timeout', 30) + 10  # Дополнительное время
                     result = future.result(timeout=timeout)
                     results.append(result)
                     completed += 1
+                    
+                    # Обновляем статистику
+                    if result.get('status') == 'success':
+                        stats['success'] += 1
+                    else:
+                        msg = result.get('message', '').lower()
+                        if 'нет url' in msg:
+                            stats['no_url'] += 1
+                        elif 'не удалось загрузить' in msg:
+                            stats['load_failed'] += 1
+                        else:
+                            stats['other_errors'] += 1
+                        
+                        # Сохраняем сообщения об ошибках (первые 10)
+                        if len(error_messages) < 10:
+                            error_messages.append(f"Строка {result.get('row_index')}: {result.get('message')}")
                     
                     # Обновляем прогресс
                     progress = completed / total
                     progress_bar.progress(progress)
                     
                     # Обновляем статус
-                    success_count = sum(1 for r in results if r.get('status') == 'success')
-                    status_text.text(f"Обработано: {completed}/{total} | Успешно: {success_count}")
+                    status_text.text(f"Обработано: {completed}/{total}")
+                    stats_text.text(
+                        f"✅ Успешно: {stats['success']} | "
+                        f"❌ Без URL: {stats['no_url']} | "
+                        f"⚠️ Ошибки загрузки: {stats['load_failed']} | "
+                        f"💥 Прочие ошибки: {stats['other_errors']}"
+                    )
                     
                 except Exception as e:
-                    logger.error(f"Ошибка в потоке для строки {idx}: {e}")
-                    results.append({
-                        'row_index': idx,
-                        'status': 'error',
-                        'message': f'Ошибка потока: {str(e)[:50]}'
-                    })
+                    logger.error(f"Ошибка при получении результата: {e}")
+                    stats['other_errors'] += 1
+                    completed += 1
         
-        logger.info(f"Обработка завершена. Успешно: {sum(1 for r in results if r.get('status') == 'success')}/{total}")
+        # Итоговая статистика
+        logger.info(f"Обработка завершена. Статистика: {stats}")
+        
+        # Показываем сводку по ошибкам
+        if error_messages:
+            with st.expander("📋 Подробности ошибок", expanded=False):
+                for error in error_messages:
+                    st.error(error)
+        
+        st.session_state.batch_results = results
         return results
     
     def create_zip_archive(self, results: List[Dict]) -> Optional[str]:
@@ -1502,15 +1667,23 @@ class InfographicGenerator:
             
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 # Добавляем успешные изображения
+                added_count = 0
                 for result in results:
                     if result.get('status') == 'success' and 'filepath' in result:
                         filepath = result['filepath']
                         if os.path.exists(filepath):
                             zipf.write(filepath, os.path.basename(filepath))
+                            added_count += 1
+                
+                logger.info(f"В архив добавлено {added_count} файлов")
             
-            logger.info(f"ZIP архив создан: {zip_path}")
-            return zip_path
-            
+            if added_count > 0:
+                logger.info(f"ZIP архив создан: {zip_path}")
+                return zip_path
+            else:
+                logger.warning("Не найдено файлов для добавления в архив")
+                return None
+                
         except Exception as e:
             logger.error(f"Ошибка создания ZIP: {e}")
             return None
@@ -1554,6 +1727,19 @@ class UIComponents:
                             for key in suggestions:
                                 st.session_state.column_mapping[key] = suggestions[key]
                             
+                            # Фильтрация строк без URL
+                            url_col = suggestions.get('image_url')
+                            if url_col and url_col in df.columns:
+                                initial_count = len(df)
+                                df = df[df[url_col].notna()].copy()
+                                df = df[~df[url_col].astype(str).str.strip().isin(['', 'nan', 'NaN', 'None'])]
+                                filtered_count = len(df)
+                                removed = initial_count - filtered_count
+                                
+                                if removed > 0:
+                                    st.info(f"⚠️ Удалено {removed} строк без корректных URL")
+                            
+                            st.session_state.df = df
                             st.success(f"✅ Загружено {len(df)} строк")
             
             # Предпросмотр данных
@@ -2192,7 +2378,6 @@ class UIComponents:
             st.error("❌ Нет данных для обработки")
             return
         
-        # Показываем информацию
         st.info(f"📊 Готово к обработке: {total_rows} строк")
         
         # Настройки диапазона
