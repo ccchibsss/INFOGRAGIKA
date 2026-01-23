@@ -13,11 +13,12 @@ import json
 import logging
 import sys
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import tempfile
 from typing import Dict, List, Any, Optional, Tuple
 import warnings
+import random
 
 # ============================
 # НАСТРОЙКА ПРИЛОЖЕНИЯ
@@ -393,6 +394,20 @@ class BackgroundLibrary:
         except Exception as e:
             logger.error(f"Ошибка создания фона: {e}")
             return Image.new('RGB', (width, height), (255, 255, 255))
+    
+    @staticmethod
+    def get_background_display_name(bg_key: str, bg_type: str = 'header') -> str:
+        """Получение отображаемого имени фона"""
+        if bg_type == 'header':
+            backgrounds = BackgroundLibrary.get_header_backgrounds()
+        elif bg_type == 'footer':
+            backgrounds = BackgroundLibrary.get_footer_backgrounds()
+        else:
+            backgrounds = BackgroundLibrary.get_main_backgrounds()
+        
+        if bg_key in backgrounds:
+            return backgrounds[bg_key].get('name', bg_key)
+        return bg_key
 
 # ============================
 # СИСТЕМА ШАБЛОНОВ С ФОНАМИ
@@ -442,6 +457,86 @@ class DynamicTemplateManager:
                 "gradient": True,
                 "rounded_corners": True
             }
+        },
+        "minimal_white": {
+            "name": "🌀 MINIMAL WHITE",
+            "description": "Минималистичный белый шаблон",
+            "category": "minimal",
+            "layout": {
+                "header_height": 0,
+                "footer_height": 0,
+                "corner_radius": 10,
+                "shadow": False,
+                "border": True
+            },
+            "backgrounds": {
+                "header": "transparent",
+                "footer": "transparent",
+                "main": "white"
+            },
+            "text_positions": {
+                "top_left": {"x": 0.5, "y": 0.2, "align": "center", "max_width": 0.8, "section": "main"},
+                "top_right": {"x": 0.5, "y": 0.35, "align": "center", "max_width": 0.8, "section": "main"},
+                "bottom_left": {"x": 0.5, "y": 0.65, "align": "center", "max_width": 0.8, "section": "main"},
+                "bottom_right": {"x": 0.5, "y": 0.8, "align": "center", "max_width": 0.8, "section": "main"}
+            },
+            "font_sizes": {
+                "top_left": 36,
+                "top_right": 30,
+                "bottom_left": 22,
+                "bottom_right": 18
+            },
+            "colors": {
+                "top_left": [33, 37, 41, 255],
+                "top_right": [52, 58, 64, 255],
+                "bottom_left": [108, 117, 125, 255],
+                "bottom_right": [73, 80, 87, 255]
+            },
+            "effects": {
+                "shadow": False,
+                "gradient": False,
+                "rounded_corners": True
+            }
+        },
+        "premium_gold": {
+            "name": "💎 PREMIUM GOLD",
+            "description": "Премиум шаблон с золотыми элементами",
+            "category": "premium",
+            "layout": {
+                "header_height": 20,
+                "footer_height": 15,
+                "corner_radius": 30,
+                "shadow": True,
+                "border": True
+            },
+            "backgrounds": {
+                "header": "gradient_gold",
+                "footer": "solid_dark",
+                "main": "gradient_warm"
+            },
+            "text_positions": {
+                "top_left": {"x": 0.5, "y": 0.1, "align": "center", "max_width": 0.7, "section": "header"},
+                "top_right": {"x": 0.5, "y": 0.25, "align": "center", "max_width": 0.7, "section": "main"},
+                "bottom_left": {"x": 0.05, "y": 0.6, "align": "left", "max_width": 0.45, "section": "main"},
+                "bottom_right": {"x": 0.95, "y": 0.6, "align": "right", "max_width": 0.45, "section": "main"}
+            },
+            "font_sizes": {
+                "top_left": 40,
+                "top_right": 48,
+                "bottom_left": 22,
+                "bottom_right": 22
+            },
+            "colors": {
+                "top_left": [255, 255, 255, 255],
+                "top_right": [218, 165, 32, 255],
+                "bottom_left": [33, 37, 41, 255],
+                "bottom_right": [33, 37, 41, 255]
+            },
+            "effects": {
+                "shadow": True,
+                "gradient": True,
+                "rounded_corners": True
+            }
         }
     }
     
@@ -451,12 +546,12 @@ class DynamicTemplateManager:
         try:
             os.makedirs(DynamicTemplateManager.TEMPLATES_DIR, exist_ok=True)
             
-            template_id = "modern_shop"
-            filepath = os.path.join(DynamicTemplateManager.TEMPLATES_DIR, f"{template_id}.json")
-            
-            if not os.path.exists(filepath):
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    json.dump(DynamicTemplateManager.BUILTIN_TEMPLATES[template_id], f, ensure_ascii=False, indent=2)
+            for template_id in DynamicTemplateManager.BUILTIN_TEMPLATES.keys():
+                filepath = os.path.join(DynamicTemplateManager.TEMPLATES_DIR, f"{template_id}.json")
+                
+                if not os.path.exists(filepath):
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(DynamicTemplateManager.BUILTIN_TEMPLATES[template_id], f, ensure_ascii=False, indent=2)
             
             logger.info(f"Директория шаблонов готова: {DynamicTemplateManager.TEMPLATES_DIR}")
             return True
@@ -498,6 +593,9 @@ class DynamicTemplateManager:
                 logger.error(f"Ошибка загрузки шаблона {template_id}: {e}")
         
         # Используем встроенный шаблон если файл не найден
+        if template_id in DynamicTemplateManager.BUILTIN_TEMPLATES:
+            return DynamicTemplateManager.BUILTIN_TEMPLATES[template_id].copy()
+        
         return DynamicTemplateManager.BUILTIN_TEMPLATES.get("modern_shop", {}).copy()
     
     @staticmethod
@@ -510,6 +608,31 @@ class DynamicTemplateManager:
             template_names.append((template_id, display_name))
         
         return template_names
+    
+    @staticmethod
+    def get_templates_by_category(category: str = "all") -> List[Tuple[str, str]]:
+        """Получение шаблонов по категории"""
+        template_names = []
+        
+        for template_id, template_data in DynamicTemplateManager.BUILTIN_TEMPLATES.items():
+            if category == "all" or template_data.get("category") == category:
+                display_name = template_data.get('name', template_id)
+                template_names.append((template_id, display_name))
+        
+        return template_names
+    
+    @staticmethod
+    def get_template_categories():
+        """Получение категорий шаблонов"""
+        return {
+            'all': 'Все шаблоны',
+            'ecommerce': '🛒 E-commerce',
+            'social': '📱 Соцсети',
+            'minimal': '🌀 Минимализм',
+            'premium': '💎 Премиум',
+            'creative': '🎨 Креативные',
+            'sale': '⚡ Распродажа'
+        }
 
 # ============================
 # УТИЛИТЫ ДЛЯ РАБОТЫ С ИЗОБРАЖЕНИЯМИ И ШРИФТАМИ
@@ -574,6 +697,27 @@ class FontManager:
             logger.error(f"Ошибка получения шрифта {font_key}: {e}")
         
         return FontManager.load_system_font('system_arial', size)
+    
+    @staticmethod
+    def get_available_fonts() -> List[Dict]:
+        """Получение списка доступных шрифтов"""
+        fonts = []
+        
+        system_fonts = [
+            {"name": "Arial (системный)", "key": "system_arial", "type": "system"},
+            {"name": "Helvetica (системный)", "key": "system_helvetica", "type": "system"},
+            {"name": "Times New Roman (системный)", "key": "system_times", "type": "system"}
+        ]
+        
+        if st.session_state.get('uploaded_fonts'):
+            for font_info in st.session_state.uploaded_fonts:
+                fonts.append({
+                    "name": f"📁 {font_info['name']}",
+                    "key": font_info['key'],
+                    "type": "uploaded"
+                })
+        
+        return system_fonts + fonts
     
     @staticmethod
     def load_system_font(font_name: str, size: int) -> ImageFont.FreeTypeFont:
@@ -706,7 +850,10 @@ class ImageProcessor:
         # Добавляем скругленные углы если нужно
         corner_radius = st.session_state.background_settings.get('corner_radius', 20)
         if corner_radius > 0:
-            canvas = ImageProcessor.add_rounded_corners(canvas, corner_radius)
+            # Ограничиваем радиус, чтобы не превышал половину меньшей стороны
+            min_side = min(width, height)
+            radius = min(corner_radius, min_side // 2)
+            canvas = ImageProcessor.add_rounded_corners(canvas, radius)
         
         # Добавляем тень если нужно
         if st.session_state.background_settings.get('shadow_enabled', True):
@@ -725,10 +872,6 @@ class ImageProcessor:
         """Добавление скругленных углов"""
         if radius <= 0:
             return img
-        
-        # Ограничиваем радиус, чтобы не превышал половину меньшей стороны
-        min_side = min(img.width, img.height)
-        radius = min(radius, min_side // 2)
         
         mask = Image.new('L', img.size, 0)
         draw = ImageDraw.Draw(mask)
@@ -859,8 +1002,9 @@ class ImageProcessor:
                         y += offset.get('y_offset', 0) * img.height / 100
                     
                     # Ограничиваем позицию в пределах изображения
-                    x = max(10, min(x, img.width - 10))
-                    y = max(10, min(y, img.height - 10))
+                    padding = 20
+                    x = max(padding, min(x, img.width - padding))
+                    y = max(padding, min(y, img.height - padding))
                     
                     # Размер шрифта
                     font_sizes = template.get("font_sizes", {})
@@ -887,13 +1031,9 @@ class ImageProcessor:
                     if align == "center":
                         draw.text((x, y), text, font=font, fill=text_color, anchor="mm")
                     elif align == "right":
-                        # Для выравнивания по правому краю используем anchor="ra"
-                        try:
-                            draw.text((x, y), text, font=font, fill=text_color, anchor="ra")
-                        except:
-                            draw.text((x, y), text, font=font, fill=text_color, align="right")
+                        draw.text((x, y), text, font=font, fill=text_color, anchor="ra")
                     else:
-                        draw.text((x, y), text, font=font, fill=text_color, align=align)
+                        draw.text((x, y), text, font=font, fill=text_color, anchor="la")
             
             return img
             
@@ -976,6 +1116,24 @@ class ImageProcessor:
         except Exception as e:
             logger.error(f"Ошибка наложения изображения: {e}")
             return background
+    
+    @staticmethod
+    def resize_image(img: Image.Image, target_size: int = 1200) -> Image.Image:
+        """Изменение размера изображения с сохранением пропорций"""
+        if img is None:
+            return None
+        
+        # Определяем максимальную сторону
+        max_side = max(img.width, img.height)
+        
+        if max_side > target_size:
+            ratio = target_size / max_side
+            new_width = int(img.width * ratio)
+            new_height = int(img.height * ratio)
+            
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        
+        return img
     
     @staticmethod
     def save_image(img: Image.Image, filepath: str, format: str = 'PNG', quality: int = 95) -> bool:
@@ -1067,6 +1225,24 @@ class ExcelProcessor:
                 suggestions[position] = df.columns[0]
         
         return suggestions
+    
+    @staticmethod
+    def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+        """Оптимизация DataFrame"""
+        if df is None:
+            return df
+        
+        # Удаляем строки без URL изображений
+        if 'image_url' in st.session_state.column_mapping:
+            image_col = st.session_state.column_mapping['image_url']
+            if image_col in df.columns:
+                initial_len = len(df)
+                df = df[df[image_col].notna()].copy()
+                removed = initial_len - len(df)
+                if removed > 0:
+                    logger.info(f"Удалено {removed} строк без URL изображений")
+        
+        return df
 
 # ============================
 # ОСНОВНОЙ ПРОЦЕССОР
@@ -1145,8 +1321,7 @@ class InfographicGenerator:
             # Изменяем размер если нужно
             if st.session_state.export_settings.get('resize', True):
                 target_size = st.session_state.export_settings.get('target_size', 1200)
-                # Сохраняем пропорции
-                main_img = ImageProcessor.resize_image(main_img, target_size)
+                main_img = self.image_processor.resize_image(main_img, target_size)
             
             # Создаем холст шаблона
             canvas = self.image_processor.create_template_canvas(
@@ -1212,23 +1387,87 @@ class InfographicGenerator:
                 'message': str(e)[:100]
             }
     
-    @staticmethod
-    def resize_image(img: Image.Image, target_size: int = 1200) -> Image.Image:
-        """Изменение размера изображения с сохранением пропорций"""
-        if img is None:
-            return None
+    def process_batch(self, df: pd.DataFrame, start_idx: int, end_idx: int) -> List[Dict]:
+        """Пакетная обработка"""
+        results = []
+        total = end_idx - start_idx + 1
         
-        # Определяем максимальную сторону
-        max_side = max(img.width, img.height)
+        if total <= 0:
+            return results
         
-        if max_side > target_size:
-            ratio = target_size / max_side
-            new_width = int(img.width * ratio)
-            new_height = int(img.height * ratio)
+        # Создаем выходную директорию
+        output_dir = st.session_state.get('output_dir', 'output_infographics')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Настройки многопоточности
+        max_workers = min(st.session_state.processing_settings.get('max_workers', 4), total)
+        max_workers = max(1, max_workers)
+        
+        logger.info(f"Начало обработки {total} строк, потоков: {max_workers}")
+        
+        # Прогресс бар
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
             
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            # Запускаем задачи
+            for idx in range(start_idx, end_idx + 1):
+                if idx >= len(df):
+                    continue
+                row = df.iloc[idx]
+                future = executor.submit(self.process_single_row, row, idx)
+                futures.append((future, idx))
+            
+            # Обрабатываем результаты
+            completed = 0
+            for future, idx in futures:
+                try:
+                    result = future.result(timeout=st.session_state.processing_settings.get('timeout', 30))
+                    results.append(result)
+                    completed += 1
+                    
+                    # Обновляем прогресс
+                    progress = completed / total
+                    progress_bar.progress(progress)
+                    
+                    # Обновляем статус
+                    success_count = sum(1 for r in results if r.get('status') == 'success')
+                    status_text.text(f"Обработано: {completed}/{total} | Успешно: {success_count}")
+                    
+                except Exception as e:
+                    logger.error(f"Ошибка в потоке для строки {idx}: {e}")
+                    results.append({
+                        'row_index': idx,
+                        'status': 'error',
+                        'message': f'Ошибка потока: {str(e)[:50]}'
+                    })
         
-        return img
+        logger.info(f"Обработка завершена. Успешно: {sum(1 for r in results if r.get('status') == 'success')}/{total}")
+        return results
+    
+    def create_zip_archive(self, results: List[Dict]) -> Optional[str]:
+        """Создание ZIP архива"""
+        try:
+            output_dir = st.session_state.get('output_dir', 'output_infographics')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            zip_path = os.path.join(output_dir, f"infographics_{timestamp}.zip")
+            
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # Добавляем успешные изображения
+                for result in results:
+                    if result.get('status') == 'success' and 'filepath' in result:
+                        filepath = result['filepath']
+                        if os.path.exists(filepath):
+                            zipf.write(filepath, os.path.basename(filepath))
+            
+            logger.info(f"ZIP архив создан: {zip_path}")
+            return zip_path
+            
+        except Exception as e:
+            logger.error(f"Ошибка создания ZIP: {e}")
+            return None
 
 # ============================
 # ИНТЕРФЕЙС ПОЛЬЗОВАТЕЛЯ
@@ -1397,6 +1636,73 @@ class UIComponents:
                     key="border_width"
                 )
                 st.session_state.background_settings['border_width'] = min(border_width, 10)
+            
+            # Настройки экспорта
+            st.subheader("💾 Экспорт")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                format_ = st.selectbox(
+                    "Формат",
+                    ["PNG", "JPEG", "WebP"],
+                    key="export_format"
+                )
+                st.session_state.export_settings['format'] = format_
+            
+            with col2:
+                quality = st.slider(
+                    "Качество",
+                    50, 100, 95,
+                    key="export_quality"
+                )
+                st.session_state.export_settings['quality'] = quality
+            
+            st.session_state.export_settings['resize'] = st.checkbox(
+                "Изменять размер",
+                value=True,
+                key="resize"
+            )
+            
+            if st.session_state.export_settings['resize']:
+                st.session_state.export_settings['target_size'] = st.select_slider(
+                    "Макс. размер",
+                    options=[800, 1200, 1600, 2000],
+                    value=1200,
+                    key="target_size"
+                )
+            
+            # Настройки обработки
+            st.subheader("⚡ Обработка")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                batch_size = st.select_slider(
+                    "Размер партии",
+                    options=[10, 25, 50, 100],
+                    value=50,
+                    key="batch_size"
+                )
+                st.session_state.processing_settings['batch_size'] = batch_size
+            
+            with col2:
+                max_workers = st.select_slider(
+                    "Потоки",
+                    options=[1, 2, 4, 6],
+                    value=4,
+                    key="max_workers"
+                )
+                st.session_state.processing_settings['max_workers'] = max_workers
+            
+            st.session_state.processing_settings['timeout'] = st.select_slider(
+                "Таймаут (сек)",
+                options=[10, 15, 30, 45],
+                value=30,
+                key="timeout"
+            )
+            
+            st.divider()
+            st.caption(f"Обработано: {st.session_state.get('processed_count', 0)}")
+            st.caption("Версия: 7.0")
     
     @staticmethod
     def render_column_mapping():
@@ -1477,128 +1783,724 @@ class UIComponents:
             st.session_state.column_mapping.update(suggestions)
             st.success("✅ Колонки подобраны!")
             st.rerun()
+    
+    @staticmethod
+    def render_font_settings():
+        """Настройки шрифтов"""
+        st.subheader("🔤 Шрифты")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Загрузка шрифтов
+            uploaded_fonts = st.file_uploader(
+                "Загрузите шрифты (.ttf)",
+                type=['ttf', 'otf'],
+                accept_multiple_files=True,
+                key="font_uploader"
+            )
+            
+            if uploaded_fonts:
+                for font_file in uploaded_fonts:
+                    with st.spinner(f"Загрузка {font_file.name}..."):
+                        font_key, font_name = FontManager.load_font_from_file(font_file)
+                        if font_key:
+                            st.success(f"✅ {font_name}")
+        
+        with col2:
+            # Выбор шрифтов
+            available_fonts = FontManager.get_available_fonts()
+            
+            if available_fonts:
+                font_options = [f["name"] for f in available_fonts]
+                font_keys = [f["key"] for f in available_fonts]
+                
+                current_font = st.session_state.font_settings.get('main_font', 'system_arial')
+                current_idx = font_keys.index(current_font) if current_font in font_keys else 0
+                
+                selected = st.selectbox(
+                    "Основной шрифт",
+                    font_options,
+                    index=current_idx,
+                    key="main_font"
+                )
+                
+                st.session_state.font_settings['main_font'] = font_keys[font_options.index(selected)]
+                
+                st.session_state.font_settings['font_size_multiplier'] = st.slider(
+                    "Размер шрифта",
+                    0.5, 2.0, 1.0, 0.1,
+                    key="font_size"
+                )
+    
+    @staticmethod
+    def render_text_offsets():
+        """Смещения текста"""
+        st.subheader("🎯 Смещение текста")
+        
+        symmetrical = st.checkbox(
+            "Симметричные смещения",
+            value=st.session_state.get('symmetrical_offsets', False),
+            key="symmetrical"
+        )
+        st.session_state.symmetrical_offsets = symmetrical
+        
+        if symmetrical:
+            col1, col2 = st.columns(2)
+            with col1:
+                x_offset = st.number_input(
+                    "Смещение X (%)",
+                    -100, 100, 0,
+                    key="sym_x"
+                )
+            with col2:
+                y_offset = st.number_input(
+                    "Смещение Y (%)",
+                    -100, 100, 0,
+                    key="sym_y"
+                )
+            
+            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+                st.session_state.text_offset_settings[key] = {
+                    'x_offset': x_offset,
+                    'y_offset': y_offset
+                }
+        else:
+            cols = st.columns(4)
+            positions = ['top_left', 'top_right', 'bottom_left', 'bottom_right']
+            labels = ['↖️ Верх. левый', '↗️ Верх. правый', '↙️ Низ. левый', '↘️ Низ. правый']
+            
+            for i, (pos, label) in enumerate(zip(positions, labels)):
+                with cols[i]:
+                    st.markdown(f"**{label}**")
+                    x = st.number_input(
+                        "X (%)",
+                        -100, 100,
+                        st.session_state.text_offset_settings[pos].get('x_offset', 0),
+                        key=f"offset_x_{pos}"
+                    )
+                    y = st.number_input(
+                        "Y (%)",
+                        -100, 100,
+                        st.session_state.text_offset_settings[pos].get('y_offset', 0),
+                        key=f"offset_y_{pos}"
+                    )
+                    st.session_state.text_offset_settings[pos] = {
+                        'x_offset': x,
+                        'y_offset': y
+                    }
+        
+        if st.button("🔄 Сбросить", key="reset_offsets"):
+            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+                st.session_state.text_offset_settings[key] = {
+                    'x_offset': 0,
+                    'y_offset': 0
+                }
+            st.rerun()
+    
+    @staticmethod
+    def render_overlay_settings():
+        """Настройки наложения"""
+        st.subheader("🖼️ Наложение")
+        
+        enabled = st.checkbox(
+            "Включить наложение",
+            value=st.session_state.image_overlay_settings.get('enabled', False),
+            key="overlay_enabled"
+        )
+        st.session_state.image_overlay_settings['enabled'] = enabled
+        
+        if enabled:
+            # Выбор колонки с изображением для наложения
+            if st.session_state.get('df') is not None:
+                available_columns = st.session_state.df.columns.tolist()
+                
+                overlay_col = st.selectbox(
+                    "Колонка с изображениями",
+                    ["Не использовать"] + available_columns,
+                    key="overlay_column"
+                )
+                
+                if overlay_col != "Не использовать":
+                    st.session_state.column_mapping['overlay_image_url'] = overlay_col
+                elif 'overlay_image_url' in st.session_state.column_mapping:
+                    del st.session_state.column_mapping['overlay_image_url']
+            
+            # Настройки наложения
+            col1, col2 = st.columns(2)
+            with col1:
+                position = st.selectbox(
+                    "Позиция",
+                    ["center", "top_left", "top_right", "bottom_left", "bottom_right"],
+                    key="overlay_position"
+                )
+                st.session_state.image_overlay_settings['position'] = position
+                
+                opacity = st.slider(
+                    "Прозрачность (%)",
+                    0, 100, 100,
+                    key="overlay_opacity"
+                )
+                st.session_state.image_overlay_settings['opacity'] = opacity
+            
+            with col2:
+                scale = st.slider(
+                    "Масштаб (%)",
+                    10, 200, 100,
+                    key="overlay_scale"
+                )
+                st.session_state.image_overlay_settings['scale'] = scale
+                
+                max_width = st.slider(
+                    "Макс. ширина (% от изображения)",
+                    5, 100, 30,
+                    key="overlay_max_width"
+                )
+                st.session_state.image_overlay_settings['max_width'] = max_width
+            
+            # Смещения
+            col1, col2 = st.columns(2)
+            with col1:
+                x_offset = st.number_input(
+                    "Смещение X (%)",
+                    -100, 100, 0,
+                    key="overlay_x"
+                )
+                st.session_state.image_overlay_settings['x_offset'] = x_offset
+            
+            with col2:
+                y_offset = st.number_input(
+                    "Смещение Y (%)",
+                    -100, 100, 0,
+                    key="overlay_y"
+                )
+                st.session_state.image_overlay_settings['y_offset'] = y_offset
+    
+    @staticmethod
+    def render_preview_tab(generator):
+        """Вкладка предпросмотра"""
+        if st.session_state.get('df') is None:
+            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
+            return
+        
+        st.header("🎯 Предпросмотр")
+        
+        # Настройки
+        UIComponents.render_font_settings()
+        UIComponents.render_text_offsets()
+        UIComponents.render_overlay_settings()
+        UIComponents.render_column_mapping()
+        
+        # Тестирование
+        st.subheader("🧪 Тестирование")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            test_row = st.number_input(
+                "Номер строки для теста",
+                0, len(st.session_state.df)-1, 0,
+                key="test_row"
+            )
+        
+        with col2:
+            st.write("")
+            st.write("")
+            test_button = st.button("🚀 Запустить тест", type="primary", use_container_width=True)
+        
+        if test_button:
+            with st.spinner("Выполнение теста..."):
+                row = st.session_state.df.iloc[test_row]
+                
+                # Получаем данные
+                text_data = {}
+                for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+                    if position in st.session_state.column_mapping:
+                        col = st.session_state.column_mapping[position]
+                        if col and col in row:
+                            text_data[position] = str(row[col] or '')
+                
+                # URL изображений
+                image_url = ''
+                if 'image_url' in st.session_state.column_mapping:
+                    col = st.session_state.column_mapping['image_url']
+                    if col and col in row:
+                        image_url = str(row[col] or '')
+                
+                overlay_url = None
+                if ('overlay_image_url' in st.session_state.column_mapping and
+                    st.session_state.image_overlay_settings.get('enabled', False)):
+                    col = st.session_state.column_mapping['overlay_image_url']
+                    if col and col in row:
+                        overlay_url = str(row[col] or '')
+                        if overlay_url.lower() in ['', 'nan', 'none']:
+                            overlay_url = None
+                
+                # Показываем данные
+                with st.expander("📋 Данные строки"):
+                    st.json(text_data)
+                    st.write(f"**URL изображения:** {image_url[:100]}..." if len(image_url) > 100 else f"**URL изображения:** {image_url}")
+                    if overlay_url:
+                        st.write(f"**URL наложения:** {overlay_url[:100]}..." if len(overlay_url) > 100 else f"**URL наложения:** {overlay_url}")
+                
+                # Обработка
+                if image_url:
+                    # Загружаем изображение
+                    img = generator.image_processor.load_image_from_url(image_url)
+                    
+                    if img:
+                        # Изменяем размер
+                        if st.session_state.export_settings.get('resize', True):
+                            target_size = st.session_state.export_settings.get('target_size', 1200)
+                            img = ImageProcessor.resize_image(img, target_size)
+                        
+                        # Создаем холст
+                        canvas = generator.image_processor.create_template_canvas(
+                            img.width, img.height,
+                            st.session_state.current_template
+                        )
+                        
+                        # Вставляем изображение
+                        header_height = int(img.height * st.session_state.background_settings.get('header_height', 15) / 100)
+                        final_img = canvas.copy()
+                        final_img.paste(img, (0, header_height))
+                        
+                        # Добавляем текст
+                        final_img = generator.image_processor.add_text_to_image(
+                            final_img, text_data, st.session_state.current_template
+                        )
+                        
+                        # Добавляем наложение
+                        if overlay_url and st.session_state.image_overlay_settings.get('enabled', False):
+                            overlay_img = generator.image_processor.load_image_from_url(overlay_url)
+                            if overlay_img:
+                                final_img = generator.image_processor.add_image_overlay(
+                                    final_img,
+                                    overlay_img,
+                                    st.session_state.image_overlay_settings
+                                )
+                        
+                        # Показываем результат
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.subheader("📷 Оригинал")
+                            st.image(img, use_column_width=True)
+                            st.caption(f"{img.width}×{img.height}")
+                        
+                        with col2:
+                            st.subheader("🎨 Результат")
+                            st.image(final_img, use_column_width=True)
+                            st.caption(f"Шаблон: {st.session_state.current_template}")
+                        
+                        # Кнопка скачивания
+                        buffered = BytesIO()
+                        format_ = st.session_state.export_settings.get('format', 'PNG')
+                        
+                        if format_ == 'JPEG':
+                            final_img.convert('RGB').save(buffered, format='JPEG',
+                                                         quality=st.session_state.export_settings.get('quality', 95))
+                            mime = 'image/jpeg'
+                        elif format_ == 'WEBP':
+                            final_img.save(buffered, format='WEBP',
+                                         quality=st.session_state.export_settings.get('quality', 95))
+                            mime = 'image/webp'
+                        else:
+                            final_img.save(buffered, format='PNG')
+                            mime = 'image/png'
+                        
+                        st.download_button(
+                            label="💾 Скачать тестовое изображение",
+                            data=buffered.getvalue(),
+                            file_name=f"test_{test_row}.{format_.lower()}",
+                            mime=mime,
+                            use_container_width=True
+                        )
+                        
+                        st.session_state.preview_image = final_img
+                    else:
+                        st.error("❌ Не удалось загрузить изображение")
+                else:
+                    st.warning("⚠️ Нет URL изображения в выбранной строке")
+    
+    @staticmethod
+    def render_processing_tab(generator):
+        """Вкладка обработки"""
+        if st.session_state.get('df') is None:
+            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
+            return
+        
+        st.header("⚡ Массовая обработка")
+        
+        # Оптимизируем данные
+        df_optimized = ExcelProcessor.optimize_dataframe(st.session_state.df)
+        total_rows = len(df_optimized)
+        
+        if total_rows == 0:
+            st.error("❌ Нет данных для обработки")
+            return
+        
+        # Показываем информацию
+        st.info(f"📊 Готово к обработке: {total_rows} строк")
+        
+        # Настройки диапазона
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            start_idx = st.number_input(
+                "Начать с",
+                0, total_rows-1, 0,
+                key="start_idx"
+            )
+        
+        with col2:
+            end_idx = st.number_input(
+                "Закончить на",
+                start_idx, total_rows-1,
+                min(start_idx + st.session_state.processing_settings.get('batch_size', 50) - 1, total_rows-1),
+                key="end_idx"
+            )
+        
+        with col3:
+            st.write("")
+            st.write("")
+            process_button = st.button(
+                "🚀 Начать обработку",
+                type="primary",
+                use_container_width=True,
+                key="process_button"
+            )
+        
+        batch_size = end_idx - start_idx + 1
+        if batch_size > 0:
+            st.success(f"✅ Будет обработано: {batch_size} строк")
+        
+        # Обработка
+        if process_button and batch_size > 0:
+            # Статистика
+            st.session_state.processing_stats = {
+                'total': batch_size,
+                'success': 0,
+                'failed': 0,
+                'start_time': datetime.now(),
+                'end_time': None
+            }
+            
+            # Прогресс
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            results_placeholder = st.empty()
+            
+            with st.spinner("Запуск обработки..."):
+                results = generator.process_batch(df_optimized, start_idx, end_idx)
+            
+            # Обновляем статистику
+            success_count = sum(1 for r in results if r.get('status') == 'success')
+            failed_count = len(results) - success_count
+            
+            st.session_state.processing_stats.update({
+                'success': success_count,
+                'failed': failed_count,
+                'end_time': datetime.now()
+            })
+            
+            st.session_state.processed_count += success_count
+            st.session_state.batch_results = results
+            
+            # Результаты
+            with results_placeholder.container():
+                st.success(f"✅ Обработка завершена!")
+                
+                # Метрики
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Успешно", success_count,
+                             delta=f"{success_count/batch_size*100:.1f}%" if batch_size > 0 else "0%")
+                
+                with col2:
+                    st.metric("Ошибки", failed_count,
+                             delta=f"-{failed_count}" if failed_count > 0 else None)
+                
+                with col3:
+                    if st.session_state.processing_stats['start_time'] and st.session_state.processing_stats['end_time']:
+                        duration = (st.session_state.processing_stats['end_time'] -
+                                  st.session_state.processing_stats['start_time']).total_seconds()
+                        st.metric("Время", f"{duration:.1f} сек",
+                                 delta=f"{batch_size/duration:.1f}/сек" if duration > 0 else None)
+                
+                # Детали ошибок
+                if failed_count > 0:
+                    with st.expander("📋 Ошибки", expanded=False):
+                        errors = [r for r in results if r.get('status') == 'error']
+                        error_df = pd.DataFrame(errors)
+                        if not error_df.empty:
+                            st.dataframe(error_df[['row_index', 'message']])
+                
+                # Архив
+                if success_count > 0:
+                    with st.spinner("Создание архива..."):
+                        zip_path = generator.create_zip_archive(results)
+                        
+                        if zip_path and os.path.exists(zip_path):
+                            with open(zip_path, 'rb') as f:
+                                st.download_button(
+                                    label="📦 Скачать ZIP архив",
+                                    data=f.read(),
+                                    file_name=os.path.basename(zip_path),
+                                    mime="application/zip",
+                                    use_container_width=True
+                                )
+                            
+                            zip_size = os.path.getsize(zip_path) / (1024 * 1024)
+                            st.info(f"📦 Размер архива: {zip_size:.2f} MB")
+                        else:
+                            st.error("❌ Ошибка создания архива")
+    
+    @staticmethod
+    def render_statistics_tab():
+        """Вкладка статистики"""
+        st.header("📊 Статистика")
+        
+        if st.session_state.get('processed_count', 0) == 0:
+            st.info("📈 Статистика появится после обработки")
+            return
+        
+        # Общая статистика
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Всего обработано", st.session_state.get('processed_count', 0))
+        
+        with col2:
+            if st.session_state.get('batch_results'):
+                success = sum(1 for r in st.session_state.batch_results if r.get('status') == 'success')
+                total = len(st.session_state.batch_results)
+                rate = (success / total * 100) if total > 0 else 0
+                st.metric("Успешность", f"{rate:.1f}%")
+        
+        with col3:
+            template = DynamicTemplateManager.load_template(st.session_state.current_template)
+            template_name = template.get('name', 'Неизвестно')
+            st.metric("Шаблон", template_name[:15])
+        
+        with col4:
+            st.metric("Формат", st.session_state.export_settings.get('format', 'PNG'))
+        
+        # Детальная статистика
+        if st.session_state.get('batch_results'):
+            st.subheader("📈 Детали последней обработки")
+            results_df = pd.DataFrame(st.session_state.batch_results)
+            
+            if 'status' in results_df.columns:
+                status_counts = results_df['status'].value_counts()
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.bar_chart(status_counts)
+                with col2:
+                    st.dataframe(status_counts)
+            
+            # Время обработки
+            if (st.session_state.processing_stats.get('start_time') and
+                st.session_state.processing_stats.get('end_time')):
+                duration = (st.session_state.processing_stats['end_time'] -
+                          st.session_state.processing_stats['start_time']).total_seconds()
+                
+                if duration > 0 and len(results_df) > 0:
+                    speed = len(results_df) / duration
+                    st.metric("Скорость", f"{speed:.2f} изобр/сек")
+    
+    @staticmethod
+    def render_templates_tab():
+        """Вкладка шаблонов"""
+        st.header("🎨 Шаблоны")
+        
+        # Категории
+        categories = DynamicTemplateManager.get_template_categories()
+        category_names = list(categories.values())
+        category_keys = list(categories.keys())
+        
+        current_category = st.session_state.get('current_category', 'all')
+        current_index = category_keys.index(current_category) if current_category in category_keys else 0
+        
+        selected_category_name = st.selectbox(
+            "Категория",
+            category_names,
+            index=current_index,
+            key="category_select"
+        )
+        
+        selected_category = category_keys[category_names.index(selected_category_name)]
+        st.session_state.current_category = selected_category
+        
+        # Шаблоны в категории
+        template_names = DynamicTemplateManager.get_templates_by_category(selected_category)
+        
+        if not template_names:
+            st.info("📝 Шаблоны не найдены")
+            return
+        
+        # Показываем шаблоны в сетке
+        cols_per_row = 3
+        template_ids = [tid for tid, _ in template_names]
+        template_display_names = [name for _, name in template_names]
+        
+        for i in range(0, len(template_names), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for col_idx, col in enumerate(cols):
+                idx = i + col_idx
+                if idx < len(template_names):
+                    with col:
+                        template_id = template_ids[idx]
+                        template_name = template_display_names[idx]
+                        template_data = DynamicTemplateManager.load_template(template_id)
+                        
+                        # Создаем превью
+                        preview_width = 300
+                        preview_height = 225
+                        
+                        try:
+                            preview = ImageProcessor.create_template_canvas(
+                                preview_width, preview_height, template_id
+                            )
+                            
+                            # Добавляем текст превью
+                            draw = ImageDraw.Draw(preview)
+                            font = FontManager.load_system_font('system_arial', 16)
+                            text = template_data.get('name', template_id)
+                            
+                            # Вычисляем позицию для текста
+                            try:
+                                # PIL 9.x.x+
+                                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                            except:
+                                # PIL 8.x.x
+                                left, top, right, bottom = draw.textsize(text, font=font)
+                            
+                            text_width = right - left
+                            text_height = bottom - top
+                            
+                            # Центрируем текст
+                            x = (preview_width - text_width) / 2
+                            y = (preview_height - text_height) / 2
+                            
+                            # Добавляем фон для текста
+                            padding = 5
+                            draw.rectangle([
+                                x - padding,
+                                y - padding,
+                                x + text_width + padding,
+                                y + text_height + padding
+                            ], fill=(255, 255, 255, 200))
+                            
+                            # Рисуем текст
+                            draw.text((x, y), text, font=font, fill=(0, 0, 0, 255))
+                            
+                            # Показываем превью
+                            st.image(preview, use_column_width=True)
+                            st.caption(template_data.get('description', 'Без описания'))
+                            
+                            # Кнопка выбора
+                            if st.button(f"Выбрать {template_name}",
+                                       key=f"select_{template_id}",
+                                       use_container_width=True):
+                                st.session_state.current_template = template_id
+                                st.success(f"✅ Выбран шаблон: {template_name}")
+                                st.rerun()
+                                
+                        except Exception as e:
+                            st.error(f"Ошибка создания превью: {e}")
 
 # ============================
 # ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
 # ============================
-def main():
-    """Основная функция приложения"""
+def initialize_application():
+    """Инициализация приложения"""
     try:
         # Инициализация состояния
         init_session_state()
         
-        # Заголовок
-        st.title("🚀 Генератор Инфографики PRO v7.0")
-        st.markdown("---")
+        # Создаем необходимые директории
+        os.makedirs("templates", exist_ok=True)
+        os.makedirs("output_infographics", exist_ok=True)
         
-        # Боковая панель
-        UIComponents.render_sidebar()
+        # Инициализация шаблонов
+        if not st.session_state.get('template_cache_initialized', False):
+            with st.spinner("🔄 Инициализация шаблонов..."):
+                DynamicTemplateManager.ensure_templates_dir()
+                
+                # Загружаем шаблоны в кэш
+                st.session_state.loaded_templates = {}
+                for template_id in DynamicTemplateManager.BUILTIN_TEMPLATES.keys():
+                    st.session_state.loaded_templates[template_id] = DynamicTemplateManager.BUILTIN_TEMPLATES[template_id]
+                
+                st.session_state.template_cache_initialized = True
         
-        # Основной контент
-        if st.session_state.get('df') is not None:
-            UIComponents.render_column_mapping()
+        # Устанавливаем флаг инициализации
+        st.session_state.app_initialized = True
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка инициализации: {e}")
+        st.error(f"Ошибка инициализации приложения: {str(e)}")
+        return False
+
+def show_main_interface():
+    """Показать основной интерфейс"""
+    # Заголовок
+    st.title("🚀 Генератор Инфографики PRO v7.0")
+    st.markdown("---")
+    
+    # Создаем табы
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🎯 Предпросмотр",
+        "⚡ Обработка",
+        "📊 Статистика",
+        "🎨 Шаблоны"
+    ])
+    
+    # Инициализируем генератор
+    generator = InfographicGenerator()
+    
+    # Боковая панель
+    UIComponents.render_sidebar()
+    
+    # Содержимое табов
+    with tab1:
+        UIComponents.render_preview_tab(generator)
+    
+    with tab2:
+        UIComponents.render_processing_tab(generator)
+    
+    with tab3:
+        UIComponents.render_statistics_tab()
+    
+    with tab4:
+        UIComponents.render_templates_tab()
+
+def main():
+    """Основная функция приложения"""
+    try:
+        # Проверяем инициализацию
+        if not st.session_state.get('app_initialized', False):
+            # Показываем загрузку
+            st.markdown("""
+            <div style="text-align: center; padding: 100px;">
+                <h1>🎯 Генератор Инфографики PRO</h1>
+                <p>Инициализация системы...</p>
+            </div>
+            """, unsafe_allow_html=True)
             
-            # Тестирование
-            st.subheader("🧪 Тестирование")
+            # Инициализируем
+            success = initialize_application()
             
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                test_row = st.number_input(
-                    "Номер строки для теста",
-                    0, len(st.session_state.df)-1, 0,
-                    key="test_row"
-                )
-            
-            with col2:
-                st.write("")
-                st.write("")
-                test_button = st.button("🚀 Запустить тест", type="primary", use_container_width=True)
-            
-            if test_button:
-                with st.spinner("Выполнение теста..."):
-                    generator = InfographicGenerator()
-                    row = st.session_state.df.iloc[test_row]
-                    
-                    # Получаем данные
-                    text_data = {}
-                    for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
-                        if position in st.session_state.column_mapping:
-                            col = st.session_state.column_mapping[position]
-                            if col and col in row:
-                                text_data[position] = str(row[col] or '')
-                    
-                    # URL изображений
-                    image_url = ''
-                    if 'image_url' in st.session_state.column_mapping:
-                        col = st.session_state.column_mapping['image_url']
-                        if col and col in row:
-                            image_url = str(row[col] or '')
-                    
-                    # Показываем данные
-                    with st.expander("📋 Данные строки"):
-                        st.json(text_data)
-                        st.write(f"**URL изображения:** {image_url[:100]}..." if len(image_url) > 100 else f"**URL изображения:** {image_url}")
-                    
-                    # Обработка
-                    if image_url:
-                        # Загружаем изображение
-                        img = generator.image_processor.load_image_from_url(image_url)
-                        
-                        if img:
-                            # Изменяем размер
-                            target_size = 800  # Для предпросмотра
-                            img = InfographicGenerator.resize_image(img, target_size)
-                            
-                            # Создаем холст
-                            canvas = generator.image_processor.create_template_canvas(
-                                img.width, img.height,
-                                st.session_state.current_template
-                            )
-                            
-                            # Вставляем изображение
-                            header_height = int(img.height * st.session_state.background_settings.get('header_height', 15) / 100)
-                            final_img = canvas.copy()
-                            final_img.paste(img, (0, header_height))
-                            
-                            # Добавляем текст
-                            final_img = generator.image_processor.add_text_to_image(
-                                final_img, text_data, st.session_state.current_template
-                            )
-                            
-                            # Показываем результат
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.subheader("📷 Оригинал")
-                                st.image(img, use_column_width=True)
-                                st.caption(f"{img.width}×{img.height}")
-                            
-                            with col2:
-                                st.subheader("🎨 Результат")
-                                st.image(final_img, use_column_width=True)
-                                st.caption(f"Шаблон: {st.session_state.current_template}")
-                            
-                            # Кнопка скачивания
-                            buffered = BytesIO()
-                            final_img.save(buffered, format='PNG')
-                            
-                            st.download_button(
-                                label="💾 Скачать тестовое изображение",
-                                data=buffered.getvalue(),
-                                file_name=f"test_{test_row}.png",
-                                mime='image/png',
-                                use_container_width=True
-                            )
-                            
-                            st.session_state.preview_image = final_img
-                        else:
-                            st.error("❌ Не удалось загрузить изображение")
-                    else:
-                        st.warning("⚠️ Нет URL изображения в выбранной строке")
+            if success:
+                st.rerun()
+            else:
+                st.error("❌ Не удалось инициализировать приложение")
+                return
         else:
-            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
+            # Показываем основной интерфейс
+            show_main_interface()
             
     except Exception as e:
-        st.error(f"❌ Ошибка: {str(e)}")
+        # Критическая ошибка
+        st.error(f"❌ Критическая ошибка: {str(e)}")
         logger.error(f"Ошибка в main: {e}")
 
 # ============================
