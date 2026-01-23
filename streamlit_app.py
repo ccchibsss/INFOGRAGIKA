@@ -50,10 +50,30 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings('ignore')
 
 # ============================
-# ИНИЦИАЛИЗАЦИЯ СЕССИИ
+# УТИЛИТЫ ДЛЯ БЕЗОПАСНОГО ДОСТУПА К SESSION_STATE
 # ============================
-def init_session_state():
-    """Инициализация состояния сессии"""
+def safe_get_session_state(key, default=None):
+    """Безопасное получение значения из session_state"""
+    try:
+        if hasattr(st.session_state, key):
+            value = getattr(st.session_state, key)
+            if value is not None:
+                return value
+    except Exception as e:
+        logger.warning(f"Ошибка получения {key} из session_state: {e}")
+    
+    # Если ключа нет или значение None, создаем дефолтное значение
+    return default
+
+def safe_set_session_state(key, value):
+    """Безопасное установка значения в session_state"""
+    try:
+        setattr(st.session_state, key, value)
+    except Exception as e:
+        logger.error(f"Ошибка установки {key} в session_state: {e}")
+
+def ensure_session_state_initialized():
+    """Гарантирует инициализацию всех необходимых атрибутов session_state"""
     defaults = {
         'df': None,
         'processed_count': 0,
@@ -65,7 +85,15 @@ def init_session_state():
             'end_time': None
         },
         'current_template': 'modern_shop',
-        'column_mapping': {},
+        'column_mapping': {
+            'top_left': None,
+            'top_right': None,
+            'bottom_left': None,
+            'bottom_right': None,
+            'image_url': None,
+            'filename': None,
+            'overlay_image_url': None
+        },
         'output_dir': 'output_infographics',
         'batch_results': [],
         'image_cache': {},
@@ -153,21 +181,13 @@ def init_session_state():
         'template_cache_initialized': False
     }
     
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-    
-    # Инициализация column_mapping если он пустой
-    if not st.session_state.column_mapping:
-        st.session_state.column_mapping = {
-            'top_left': None,
-            'top_right': None,
-            'bottom_left': None,
-            'bottom_right': None,
-            'image_url': None,
-            'filename': None,
-            'overlay_image_url': None
-        }
+    for key, default_value in defaults.items():
+        if not hasattr(st.session_state, key):
+            safe_set_session_state(key, default_value)
+        elif getattr(st.session_state, key) is None:
+            safe_set_session_state(key, default_value)
+        elif key == 'column_mapping' and (not isinstance(st.session_state.column_mapping, dict) or len(st.session_state.column_mapping) == 0):
+            safe_set_session_state(key, default_value)
 
 # ============================
 # БИБЛИОТЕКА ФОНОВ И ГРАДИЕНТОВ
@@ -398,20 +418,6 @@ class BackgroundLibrary:
         except Exception as e:
             logger.error(f"Ошибка создания фона: {e}")
             return Image.new('RGB', (width, height), (255, 255, 255))
-    
-    @staticmethod
-    def get_background_display_name(bg_key: str, bg_type: str = 'header') -> str:
-        """Получение отображаемого имени фона"""
-        if bg_type == 'header':
-            backgrounds = BackgroundLibrary.get_header_backgrounds()
-        elif bg_type == 'footer':
-            backgrounds = BackgroundLibrary.get_footer_backgrounds()
-        else:
-            backgrounds = BackgroundLibrary.get_main_backgrounds()
-        
-        if bg_key in backgrounds:
-            return backgrounds[bg_key].get('name', bg_key)
-        return bg_key
 
 # ============================
 # СИСТЕМА ШАБЛОНОВ С ФОНАМИ
@@ -567,7 +573,8 @@ class DynamicTemplateManager:
     def load_template(template_id: str) -> Dict:
         """Загрузка шаблона по ID"""
         # Проверяем кэш
-        if (st.session_state.get('loaded_templates') and
+        if (hasattr(st.session_state, 'loaded_templates') and
+            st.session_state.loaded_templates and
             template_id in st.session_state.loaded_templates):
             return st.session_state.loaded_templates[template_id]
         
@@ -588,7 +595,7 @@ class DynamicTemplateManager:
                 template_data['id'] = template_id
                 
                 # Сохраняем в кэш
-                if 'loaded_templates' not in st.session_state:
+                if not hasattr(st.session_state, 'loaded_templates'):
                     st.session_state.loaded_templates = {}
                 st.session_state.loaded_templates[template_id] = template_data
                 
@@ -657,9 +664,12 @@ class FontManager:
                 font_name = uploaded_file.name
                 font_key = hashlib.md5(uploaded_file.getvalue()).hexdigest()[:16]
                 
-                if 'font_cache' not in st.session_state:
+                # Гарантируем инициализацию font_cache
+                if not hasattr(st.session_state, 'font_cache'):
                     st.session_state.font_cache = {}
-                if 'uploaded_fonts' not in st.session_state:
+                
+                # Гарантируем инициализацию uploaded_fonts
+                if not hasattr(st.session_state, 'uploaded_fonts'):
                     st.session_state.uploaded_fonts = []
                 
                 font_info = {
@@ -692,7 +702,8 @@ class FontManager:
     def get_font(font_key: str, size: int) -> ImageFont.FreeTypeFont:
         """Получение шрифта по ключу с указанным размером"""
         try:
-            if (st.session_state.get('font_cache') and
+            if (hasattr(st.session_state, 'font_cache') and
+                st.session_state.font_cache and
                 font_key in st.session_state.font_cache):
                 font_info = st.session_state.font_cache[font_key]
                 if os.path.exists(font_info['path']):
@@ -713,7 +724,7 @@ class FontManager:
             {"name": "Times New Roman (системный)", "key": "system_times", "type": "system"}
         ]
         
-        if st.session_state.get('uploaded_fonts'):
+        if hasattr(st.session_state, 'uploaded_fonts') and st.session_state.uploaded_fonts:
             for font_info in st.session_state.uploaded_fonts:
                 fonts.append({
                     "name": f"📁 {font_info['name']}",
@@ -760,7 +771,7 @@ class ImageProcessor:
         url = url.strip()
         
         # Проверяем кэш
-        if st.session_state.get('image_cache'):
+        if hasattr(st.session_state, 'image_cache') and st.session_state.image_cache:
             cache_key = hashlib.md5(url.encode()).hexdigest()
             if cache_key in st.session_state.image_cache:
                 cached_img = st.session_state.image_cache[cache_key]
@@ -791,8 +802,9 @@ class ImageProcessor:
                     img = img.convert('RGBA')
                 
                 # Кэшируем
-                if 'image_cache' not in st.session_state:
+                if not hasattr(st.session_state, 'image_cache'):
                     st.session_state.image_cache = {}
+                
                 cache_key = hashlib.md5(url.encode()).hexdigest()
                 st.session_state.image_cache[cache_key] = img.copy()
                 
@@ -813,8 +825,24 @@ class ImageProcessor:
         template = DynamicTemplateManager.load_template(template_id)
         layout = template.get("layout", {})
         
-        header_height_percent = st.session_state.background_settings.get('header_height', 15)
-        footer_height_percent = st.session_state.background_settings.get('footer_height', 10)
+        # Гарантируем наличие background_settings
+        if not hasattr(st.session_state, 'background_settings'):
+            st.session_state.background_settings = {
+                'header_background': 'gradient_blue',
+                'footer_background': 'gradient_dark',
+                'main_background': 'white',
+                'header_height': 15,
+                'footer_height': 10,
+                'corner_radius': 20,
+                'shadow_enabled': True,
+                'border_enabled': True,
+                'border_color': '#e0e0e0',
+                'border_width': 2
+            }
+        
+        background_settings = st.session_state.background_settings
+        header_height_percent = background_settings.get('header_height', 15)
+        footer_height_percent = background_settings.get('footer_height', 10)
         
         header_height = int(height * header_height_percent / 100)
         footer_height = int(height * footer_height_percent / 100)
@@ -829,9 +857,9 @@ class ImageProcessor:
         canvas = Image.new('RGBA', (width, height), (255, 255, 255, 0))
         
         # Создаем фоны для разных секций
-        header_bg_key = st.session_state.background_settings.get('header_background', 'gradient_blue')
-        footer_bg_key = st.session_state.background_settings.get('footer_background', 'gradient_dark')
-        main_bg_key = st.session_state.background_settings.get('main_background', 'white')
+        header_bg_key = background_settings.get('header_background', 'gradient_blue')
+        footer_bg_key = background_settings.get('footer_background', 'gradient_dark')
+        main_bg_key = background_settings.get('main_background', 'white')
         
         # Получаем конфигурации фонов
         header_bgs = BackgroundLibrary.get_header_backgrounds()
@@ -852,7 +880,7 @@ class ImageProcessor:
             canvas.paste(footer_bg, (0, header_height + main_height))
         
         # Добавляем скругленные углы если нужно
-        corner_radius = st.session_state.background_settings.get('corner_radius', 20)
+        corner_radius = background_settings.get('corner_radius', 20)
         if corner_radius > 0:
             # Ограничиваем радиус, чтобы не превышал половину меньшей стороны
             min_side = min(width, height)
@@ -860,13 +888,13 @@ class ImageProcessor:
             canvas = ImageProcessor.add_rounded_corners(canvas, radius)
         
         # Добавляем тень если нужно
-        if st.session_state.background_settings.get('shadow_enabled', True):
+        if background_settings.get('shadow_enabled', True):
             canvas = ImageProcessor.add_shadow_effect(canvas)
         
         # Добавляем рамку если нужно (внутри границ)
-        if st.session_state.background_settings.get('border_enabled', True):
-            border_color = st.session_state.background_settings.get('border_color', '#e0e0e0')
-            border_width = st.session_state.background_settings.get('border_width', 2)
+        if background_settings.get('border_enabled', True):
+            border_color = background_settings.get('border_color', '#e0e0e0')
+            border_width = background_settings.get('border_width', 2)
             canvas = ImageProcessor.add_border(canvas, border_color, border_width)
         
         return canvas
@@ -957,7 +985,7 @@ class ImageProcessor:
             draw = ImageDraw.Draw(img)
             
             # Настройки шрифта
-            font_settings = st.session_state.get('font_settings', {})
+            font_settings = safe_get_session_state('font_settings', {})
             main_font_key = font_settings.get('main_font', 'system_arial')
             font_size_multiplier = font_settings.get('font_size_multiplier', 1.0)
             
@@ -965,8 +993,9 @@ class ImageProcessor:
             text_positions = template.get("text_positions", {})
             
             # Высота секций
-            header_height = int(img.height * st.session_state.background_settings.get('header_height', 15) / 100)
-            footer_height = int(img.height * st.session_state.background_settings.get('footer_height', 10) / 100)
+            background_settings = safe_get_session_state('background_settings', {})
+            header_height = int(img.height * background_settings.get('header_height', 15) / 100)
+            footer_height = int(img.height * background_settings.get('footer_height', 10) / 100)
             main_height = img.height - header_height - footer_height
             
             # Добавляем каждый текстовый блок
@@ -1000,8 +1029,9 @@ class ImageProcessor:
                         y = header_height + y * main_height
                     
                     # Применяем смещения
-                    if position_key in st.session_state.text_offset_settings:
-                        offset = st.session_state.text_offset_settings[position_key]
+                    text_offset_settings = safe_get_session_state('text_offset_settings', {})
+                    if position_key in text_offset_settings:
+                        offset = text_offset_settings[position_key]
                         x += offset.get('x_offset', 0) * img.width / 100
                         y += offset.get('y_offset', 0) * img.height / 100
                     
@@ -1234,8 +1264,9 @@ class ExcelProcessor:
             return df
         
         # Удаляем строки без URL изображений
-        if 'image_url' in st.session_state.column_mapping:
-            image_col = st.session_state.column_mapping['image_url']
+        column_mapping = safe_get_session_state('column_mapping', {})
+        if 'image_url' in column_mapping:
+            image_col = column_mapping['image_url']
             if image_col and image_col in df.columns:
                 initial_len = len(df)
                 df = df[df[image_col].notna()].copy()
@@ -1257,19 +1288,11 @@ class InfographicGenerator:
     def process_single_row(self, row: pd.Series, row_index: int) -> Dict:
         """Обработка одной строки"""
         try:
-            # Проверяем и инициализируем column_mapping если нужно
-            if not hasattr(st.session_state, 'column_mapping') or not st.session_state.column_mapping:
-                st.session_state.column_mapping = {
-                    'top_left': None,
-                    'top_right': None,
-                    'bottom_left': None,
-                    'bottom_right': None,
-                    'image_url': None,
-                    'filename': None,
-                    'overlay_image_url': None
-                }
+            # Гарантируем инициализацию всех необходимых атрибутов
+            ensure_session_state_initialized()
             
-            column_mapping = st.session_state.column_mapping
+            # Получаем column_mapping безопасно
+            column_mapping = safe_get_session_state('column_mapping', {})
             
             # Получаем данные из строки
             text_data = {}
@@ -1319,11 +1342,12 @@ class InfographicGenerator:
                         filename = re.sub(r'\s+', '_', filename)
                         filename = filename[:50]  # Ограничиваем длину
             
+            # Получаем настройки обработки
+            processing_settings = safe_get_session_state('processing_settings', {})
+            timeout = processing_settings.get('timeout', 30)
+            
             # Загружаем основное изображение
-            main_img = self.image_processor.load_image_from_url(
-                image_url,
-                timeout=st.session_state.processing_settings.get('timeout', 30)
-            )
+            main_img = self.image_processor.load_image_from_url(image_url, timeout=timeout)
             
             if main_img is None:
                 return {
@@ -1332,51 +1356,57 @@ class InfographicGenerator:
                     'message': 'Не удалось загрузить изображение'
                 }
             
+            # Получаем настройки экспорта
+            export_settings = safe_get_session_state('export_settings', {})
+            
             # Изменяем размер если нужно
-            if st.session_state.export_settings.get('resize', True):
-                target_size = st.session_state.export_settings.get('target_size', 1200)
+            if export_settings.get('resize', True):
+                target_size = export_settings.get('target_size', 1200)
                 main_img = self.image_processor.resize_image(main_img, target_size)
+            
+            # Получаем текущий шаблон
+            current_template = safe_get_session_state('current_template', 'modern_shop')
             
             # Создаем холст шаблона
             canvas = self.image_processor.create_template_canvas(
-                main_img.width, main_img.height,
-                st.session_state.current_template
+                main_img.width, main_img.height, current_template
             )
             
+            # Получаем настройки фона
+            background_settings = safe_get_session_state('background_settings', {})
+            header_height = int(main_img.height * background_settings.get('header_height', 15) / 100)
+            
             # Вставляем основное изображение
-            header_height = int(main_img.height * st.session_state.background_settings.get('header_height', 15) / 100)
             final_img = canvas.copy()
             final_img.paste(main_img, (0, header_height))
             
             # Добавляем текст
             final_img = self.image_processor.add_text_to_image(
-                final_img, text_data, st.session_state.current_template
+                final_img, text_data, current_template
             )
             
             # Добавляем наложение если есть
-            if overlay_url and st.session_state.image_overlay_settings.get('enabled', False):
-                overlay_img = self.image_processor.load_image_from_url(
-                    overlay_url,
-                    timeout=15
-                )
+            image_overlay_settings = safe_get_session_state('image_overlay_settings', {})
+            if overlay_url and image_overlay_settings.get('enabled', False):
+                overlay_img = self.image_processor.load_image_from_url(overlay_url, timeout=15)
                 
                 if overlay_img:
                     final_img = self.image_processor.add_image_overlay(
                         final_img,
                         overlay_img,
-                        st.session_state.image_overlay_settings
+                        image_overlay_settings
                     )
             
             # Сохраняем
-            output_dir = st.session_state.get('output_dir', 'output_infographics')
-            format_ext = st.session_state.export_settings.get('format', 'PNG').lower()
+            output_dir = safe_get_session_state('output_dir', 'output_infographics')
+            format_ext = export_settings.get('format', 'PNG').lower()
             filepath = os.path.join(output_dir, f"{filename}.{format_ext}")
             
             success = self.image_processor.save_image(
                 final_img,
                 filepath,
-                format=st.session_state.export_settings.get('format', 'PNG'),
-                quality=st.session_state.export_settings.get('quality', 95)
+                format=export_settings.get('format', 'PNG'),
+                quality=export_settings.get('quality', 95)
             )
             
             if success:
@@ -1410,11 +1440,12 @@ class InfographicGenerator:
             return results
         
         # Создаем выходную директорию
-        output_dir = st.session_state.get('output_dir', 'output_infographics')
+        output_dir = safe_get_session_state('output_dir', 'output_infographics')
         os.makedirs(output_dir, exist_ok=True)
         
         # Настройки многопоточности
-        max_workers = min(st.session_state.processing_settings.get('max_workers', 4), total)
+        processing_settings = safe_get_session_state('processing_settings', {})
+        max_workers = min(processing_settings.get('max_workers', 4), total)
         max_workers = max(1, max_workers)
         
         logger.info(f"Начало обработки {total} строк, потоков: {max_workers}")
@@ -1438,7 +1469,8 @@ class InfographicGenerator:
             completed = 0
             for future, idx in futures:
                 try:
-                    result = future.result(timeout=st.session_state.processing_settings.get('timeout', 30))
+                    timeout = processing_settings.get('timeout', 30)
+                    result = future.result(timeout=timeout)
                     results.append(result)
                     completed += 1
                     
@@ -1464,7 +1496,7 @@ class InfographicGenerator:
     def create_zip_archive(self, results: List[Dict]) -> Optional[str]:
         """Создание ZIP архива"""
         try:
-            output_dir = st.session_state.get('output_dir', 'output_infographics')
+            output_dir = safe_get_session_state('output_dir', 'output_infographics')
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             zip_path = os.path.join(output_dir, f"infographics_{timestamp}.zip")
             
@@ -1504,8 +1536,11 @@ class UIComponents:
             )
             
             if uploaded_file:
-                if (st.session_state.get('uploaded_file_name') != uploaded_file.name or
-                    st.session_state.get('df') is None):
+                # Гарантируем инициализацию session_state
+                ensure_session_state_initialized()
+                
+                if (st.session_state.uploaded_file_name != uploaded_file.name or
+                    st.session_state.df is None):
                     
                     with st.spinner("Загрузка файла..."):
                         df = ExcelProcessor.read_excel_file(uploaded_file)
@@ -1515,17 +1550,14 @@ class UIComponents:
                             
                             # Автоподбор колонок
                             suggestions = ExcelProcessor.get_column_suggestions(df)
-                            # Инициализируем column_mapping если он пустой
-                            if not st.session_state.column_mapping:
-                                st.session_state.column_mapping = {}
-                            # Обновляем только существующие ключи
+                            # Обновляем column_mapping
                             for key in suggestions:
                                 st.session_state.column_mapping[key] = suggestions[key]
                             
                             st.success(f"✅ Загружено {len(df)} строк")
             
             # Предпросмотр данных
-            if st.session_state.get('df') is not None:
+            if st.session_state.df is not None:
                 with st.expander("👁️ Предпросмотр данных"):
                     preview_rows = st.slider("Строк", 5, 50, 10)
                     st.dataframe(st.session_state.df.head(preview_rows))
@@ -1538,7 +1570,7 @@ class UIComponents:
                 template_options = [name for _, name in template_names]
                 template_ids = [tid for tid, _ in template_names]
                 
-                current_template = st.session_state.get('current_template', 'modern_shop')
+                current_template = st.session_state.current_template
                 current_index = template_ids.index(current_template) if current_template in template_ids else 0
                 
                 selected = st.selectbox(
@@ -1559,7 +1591,7 @@ class UIComponents:
             header_options = [bg['name'] for bg in header_bgs.values()]
             header_keys = list(header_bgs.keys())
             
-            current_header = st.session_state.background_settings.get('header_background', 'gradient_blue')
+            current_header = st.session_state.background_settings['header_background']
             header_idx = header_keys.index(current_header) if current_header in header_keys else 0
             
             selected_header = st.selectbox(
@@ -1575,7 +1607,7 @@ class UIComponents:
             main_options = [bg['name'] for bg in main_bgs.values()]
             main_keys = list(main_bgs.keys())
             
-            current_main = st.session_state.background_settings.get('main_background', 'white')
+            current_main = st.session_state.background_settings['main_background']
             main_idx = main_keys.index(current_main) if current_main in main_keys else 0
             
             selected_main = st.selectbox(
@@ -1591,7 +1623,7 @@ class UIComponents:
             footer_options = [bg['name'] for bg in footer_bgs.values()]
             footer_keys = list(footer_bgs.keys())
             
-            current_footer = st.session_state.background_settings.get('footer_background', 'gradient_dark')
+            current_footer = st.session_state.background_settings['footer_background']
             footer_idx = footer_keys.index(current_footer) if current_footer in footer_keys else 0
             
             selected_footer = st.selectbox(
@@ -1720,13 +1752,14 @@ class UIComponents:
             )
             
             st.divider()
-            st.caption(f"Обработано: {st.session_state.get('processed_count', 0)}")
+            processed_count = safe_get_session_state('processed_count', 0)
+            st.caption(f"Обработано: {processed_count}")
             st.caption("Версия: 7.0")
     
     @staticmethod
     def render_column_mapping():
         """Настройка маппинга колонок"""
-        if st.session_state.get('df') is None:
+        if st.session_state.df is None:
             return
         
         st.subheader("📊 Настройка колонок")
@@ -1737,7 +1770,7 @@ class UIComponents:
         
         with col1:
             # Верхний левый
-            top_left_default = st.session_state.column_mapping.get('top_left')
+            top_left_default = st.session_state.column_mapping['top_left']
             top_left_idx = available_columns.index(top_left_default) if top_left_default in available_columns else 0
             st.session_state.column_mapping['top_left'] = st.selectbox(
                 "Верхний левый",
@@ -1747,7 +1780,7 @@ class UIComponents:
             )
             
             # Верхний правый
-            top_right_default = st.session_state.column_mapping.get('top_right')
+            top_right_default = st.session_state.column_mapping['top_right']
             top_right_idx = available_columns.index(top_right_default) if top_right_default in available_columns else min(1, len(available_columns)-1)
             st.session_state.column_mapping['top_right'] = st.selectbox(
                 "Верхний правый",
@@ -1757,7 +1790,7 @@ class UIComponents:
             )
             
             # URL изображения
-            image_url_default = st.session_state.column_mapping.get('image_url')
+            image_url_default = st.session_state.column_mapping['image_url']
             image_url_idx = available_columns.index(image_url_default) if image_url_default in available_columns else min(2, len(available_columns)-1)
             st.session_state.column_mapping['image_url'] = st.selectbox(
                 "URL изображения",
@@ -1768,7 +1801,7 @@ class UIComponents:
         
         with col2:
             # Нижний левый
-            bottom_left_default = st.session_state.column_mapping.get('bottom_left')
+            bottom_left_default = st.session_state.column_mapping['bottom_left']
             bottom_left_idx = available_columns.index(bottom_left_default) if bottom_left_default in available_columns else min(3, len(available_columns)-1)
             st.session_state.column_mapping['bottom_left'] = st.selectbox(
                 "Нижний левый",
@@ -1778,7 +1811,7 @@ class UIComponents:
             )
             
             # Нижний правый
-            bottom_right_default = st.session_state.column_mapping.get('bottom_right')
+            bottom_right_default = st.session_state.column_mapping['bottom_right']
             bottom_right_idx = available_columns.index(bottom_right_default) if bottom_right_default in available_columns else min(4, len(available_columns)-1)
             st.session_state.column_mapping['bottom_right'] = st.selectbox(
                 "Нижний правый",
@@ -1788,7 +1821,7 @@ class UIComponents:
             )
             
             # Имя файла
-            filename_default = st.session_state.column_mapping.get('filename')
+            filename_default = st.session_state.column_mapping['filename']
             filename_idx = available_columns.index(filename_default) if filename_default in available_columns else 0
             st.session_state.column_mapping['filename'] = st.selectbox(
                 "Имя файла",
@@ -1799,11 +1832,9 @@ class UIComponents:
         
         if st.button("🔍 Автоподбор", key="auto_map"):
             suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
-            # Инициализируем column_mapping если он пустой
-            if not st.session_state.column_mapping:
-                st.session_state.column_mapping = {}
             # Обновляем все ключи
-            st.session_state.column_mapping.update(suggestions)
+            for key in suggestions:
+                st.session_state.column_mapping[key] = suggestions[key]
             st.success("✅ Колонки подобраны!")
             st.rerun()
     
@@ -1838,7 +1869,7 @@ class UIComponents:
                 font_options = [f["name"] for f in available_fonts]
                 font_keys = [f["key"] for f in available_fonts]
                 
-                current_font = st.session_state.font_settings.get('main_font', 'system_arial')
+                current_font = st.session_state.font_settings['main_font']
                 current_idx = font_keys.index(current_font) if current_font in font_keys else 0
                 
                 selected = st.selectbox(
@@ -1863,7 +1894,7 @@ class UIComponents:
         
         symmetrical = st.checkbox(
             "Симметричные смещения",
-            value=st.session_state.get('symmetrical_offsets', False),
+            value=st.session_state.symmetrical_offsets,
             key="symmetrical"
         )
         st.session_state.symmetrical_offsets = symmetrical
@@ -1899,13 +1930,13 @@ class UIComponents:
                     x = st.number_input(
                         "X (%)",
                         -100, 100,
-                        st.session_state.text_offset_settings[pos].get('x_offset', 0),
+                        st.session_state.text_offset_settings[pos]['x_offset'],
                         key=f"offset_x_{pos}"
                     )
                     y = st.number_input(
                         "Y (%)",
                         -100, 100,
-                        st.session_state.text_offset_settings[pos].get('y_offset', 0),
+                        st.session_state.text_offset_settings[pos]['y_offset'],
                         key=f"offset_y_{pos}"
                     )
                     st.session_state.text_offset_settings[pos] = {
@@ -1928,14 +1959,14 @@ class UIComponents:
         
         enabled = st.checkbox(
             "Включить наложение",
-            value=st.session_state.image_overlay_settings.get('enabled', False),
+            value=st.session_state.image_overlay_settings['enabled'],
             key="overlay_enabled"
         )
         st.session_state.image_overlay_settings['enabled'] = enabled
         
         if enabled:
             # Выбор колонки с изображением для наложения
-            if st.session_state.get('df') is not None:
+            if st.session_state.df is not None:
                 available_columns = st.session_state.df.columns.tolist()
                 
                 overlay_col = st.selectbox(
@@ -2002,7 +2033,7 @@ class UIComponents:
     @staticmethod
     def render_preview_tab(generator):
         """Вкладка предпросмотра"""
-        if st.session_state.get('df') is None:
+        if st.session_state.df is None:
             st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
             return
         
@@ -2037,22 +2068,21 @@ class UIComponents:
                 # Получаем данные
                 text_data = {}
                 for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
-                    if position in st.session_state.column_mapping and st.session_state.column_mapping[position]:
+                    if st.session_state.column_mapping[position]:
                         col = st.session_state.column_mapping[position]
                         if col in row:
                             text_data[position] = str(row[col] or '')
                 
                 # URL изображений
                 image_url = ''
-                if 'image_url' in st.session_state.column_mapping and st.session_state.column_mapping['image_url']:
+                if st.session_state.column_mapping['image_url']:
                     col = st.session_state.column_mapping['image_url']
                     if col in row:
                         image_url = str(row[col] or '')
                 
                 overlay_url = None
-                if ('overlay_image_url' in st.session_state.column_mapping and
-                    st.session_state.column_mapping.get('overlay_image_url') and
-                    st.session_state.image_overlay_settings.get('enabled', False)):
+                if (st.session_state.column_mapping.get('overlay_image_url') and
+                    st.session_state.image_overlay_settings['enabled']):
                     col = st.session_state.column_mapping['overlay_image_url']
                     if col in row:
                         overlay_url = str(row[col] or '')
@@ -2073,8 +2103,8 @@ class UIComponents:
                     
                     if img:
                         # Изменяем размер
-                        if st.session_state.export_settings.get('resize', True):
-                            target_size = st.session_state.export_settings.get('target_size', 1200)
+                        if st.session_state.export_settings['resize']:
+                            target_size = st.session_state.export_settings['target_size']
                             img = ImageProcessor.resize_image(img, target_size)
                         
                         # Создаем холст
@@ -2084,7 +2114,7 @@ class UIComponents:
                         )
                         
                         # Вставляем изображение
-                        header_height = int(img.height * st.session_state.background_settings.get('header_height', 15) / 100)
+                        header_height = int(img.height * st.session_state.background_settings['header_height'] / 100)
                         final_img = canvas.copy()
                         final_img.paste(img, (0, header_height))
                         
@@ -2094,7 +2124,7 @@ class UIComponents:
                         )
                         
                         # Добавляем наложение
-                        if overlay_url and st.session_state.image_overlay_settings.get('enabled', False):
+                        if overlay_url and st.session_state.image_overlay_settings['enabled']:
                             overlay_img = generator.image_processor.load_image_from_url(overlay_url)
                             if overlay_img:
                                 final_img = generator.image_processor.add_image_overlay(
@@ -2117,15 +2147,15 @@ class UIComponents:
                         
                         # Кнопка скачивания
                         buffered = BytesIO()
-                        format_ = st.session_state.export_settings.get('format', 'PNG')
+                        format_ = st.session_state.export_settings['format']
                         
                         if format_ == 'JPEG':
                             final_img.convert('RGB').save(buffered, format='JPEG',
-                                                         quality=st.session_state.export_settings.get('quality', 95))
+                                                         quality=st.session_state.export_settings['quality'])
                             mime = 'image/jpeg'
                         elif format_ == 'WEBP':
                             final_img.save(buffered, format='WEBP',
-                                         quality=st.session_state.export_settings.get('quality', 95))
+                                         quality=st.session_state.export_settings['quality'])
                             mime = 'image/webp'
                         else:
                             final_img.save(buffered, format='PNG')
@@ -2148,7 +2178,7 @@ class UIComponents:
     @staticmethod
     def render_processing_tab(generator):
         """Вкладка обработки"""
-        if st.session_state.get('df') is None:
+        if st.session_state.df is None:
             st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
             return
         
@@ -2178,7 +2208,7 @@ class UIComponents:
             end_idx = st.number_input(
                 "Закончить на",
                 start_idx, total_rows-1,
-                min(start_idx + st.session_state.processing_settings.get('batch_size', 50) - 1, total_rows-1),
+                min(start_idx + st.session_state.processing_settings['batch_size'] - 1, total_rows-1),
                 key="end_idx"
             )
         
@@ -2282,19 +2312,21 @@ class UIComponents:
         """Вкладка статистики"""
         st.header("📊 Статистика")
         
-        if st.session_state.get('processed_count', 0) == 0:
+        processed_count = safe_get_session_state('processed_count', 0)
+        if processed_count == 0:
             st.info("📈 Статистика появится после обработки")
             return
         
         # Общая статистика
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Всего обработано", st.session_state.get('processed_count', 0))
+            st.metric("Всего обработано", processed_count)
         
         with col2:
-            if st.session_state.get('batch_results'):
-                success = sum(1 for r in st.session_state.batch_results if r.get('status') == 'success')
-                total = len(st.session_state.batch_results)
+            batch_results = safe_get_session_state('batch_results', [])
+            if batch_results:
+                success = sum(1 for r in batch_results if r.get('status') == 'success')
+                total = len(batch_results)
                 rate = (success / total * 100) if total > 0 else 0
                 st.metric("Успешность", f"{rate:.1f}%")
         
@@ -2304,12 +2336,13 @@ class UIComponents:
             st.metric("Шаблон", template_name[:15])
         
         with col4:
-            st.metric("Формат", st.session_state.export_settings.get('format', 'PNG'))
+            st.metric("Формат", st.session_state.export_settings['format'])
         
         # Детальная статистика
-        if st.session_state.get('batch_results'):
+        batch_results = safe_get_session_state('batch_results', [])
+        if batch_results:
             st.subheader("📈 Детали последней обработки")
-            results_df = pd.DataFrame(st.session_state.batch_results)
+            results_df = pd.DataFrame(batch_results)
             
             if 'status' in results_df.columns:
                 status_counts = results_df['status'].value_counts()
@@ -2320,10 +2353,11 @@ class UIComponents:
                     st.dataframe(status_counts)
             
             # Время обработки
-            if (st.session_state.processing_stats.get('start_time') and
-                st.session_state.processing_stats.get('end_time')):
-                duration = (st.session_state.processing_stats['end_time'] -
-                          st.session_state.processing_stats['start_time']).total_seconds()
+            processing_stats = safe_get_session_state('processing_stats', {})
+            if (processing_stats.get('start_time') and
+                processing_stats.get('end_time')):
+                duration = (processing_stats['end_time'] -
+                          processing_stats['start_time']).total_seconds()
                 
                 if duration > 0 and len(results_df) > 0:
                     speed = len(results_df) / duration
@@ -2339,7 +2373,7 @@ class UIComponents:
         category_names = list(categories.values())
         category_keys = list(categories.keys())
         
-        current_category = st.session_state.get('current_category', 'all')
+        current_category = st.session_state.current_category
         current_index = category_keys.index(current_category) if current_category in category_keys else 0
         
         selected_category_name = st.selectbox(
@@ -2436,15 +2470,15 @@ class UIComponents:
 def initialize_application():
     """Инициализация приложения"""
     try:
-        # Инициализация состояния
-        init_session_state()
+        # Гарантируем инициализацию всех атрибутов session_state
+        ensure_session_state_initialized()
         
         # Создаем необходимые директории
         os.makedirs("templates", exist_ok=True)
         os.makedirs("output_infographics", exist_ok=True)
         
         # Инициализация шаблонов
-        if not st.session_state.get('template_cache_initialized', False):
+        if not st.session_state.template_cache_initialized:
             with st.spinner("🔄 Инициализация шаблонов..."):
                 DynamicTemplateManager.ensure_templates_dir()
                 
@@ -2466,6 +2500,9 @@ def initialize_application():
 
 def show_main_interface():
     """Показать основной интерфейс"""
+    # Гарантируем инициализацию перед показом интерфейса
+    ensure_session_state_initialized()
+    
     # Заголовок
     st.title("🚀 Генератор Инфографики PRO v7.0")
     st.markdown("---")
@@ -2501,7 +2538,7 @@ def main():
     """Основная функция приложения"""
     try:
         # Проверяем инициализацию
-        if not st.session_state.get('app_initialized', False):
+        if not hasattr(st.session_state, 'app_initialized') or not st.session_state.app_initialized:
             # Показываем загрузку
             st.markdown("""
             <div style="text-align: center; padding: 100px;">
