@@ -24,7 +24,7 @@ import random
 # НАСТРОЙКА ПРИЛОЖЕНИЯ
 # ============================
 st.set_page_config(
-    page_title="🎯 Генератор Инфографики PRO v8.0",
+    page_title="🎯 Генератор Инфографики PRO v8.1",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -92,7 +92,11 @@ def ensure_session_state_initialized():
             'bottom_right': None,
             'image_url': None,
             'filename': None,
-            'overlay_image_url': None
+            'overlay_image_url': None,
+            'header_left': None,
+            'header_right': None,
+            'footer_left': None,
+            'footer_right': None
         },
         'output_dir': 'output_infographics',
         'batch_results': [],
@@ -117,7 +121,21 @@ def ensure_session_state_initialized():
             'top_left': {'x_offset': 0, 'y_offset': 0},
             'top_right': {'x_offset': 0, 'y_offset': 0},
             'bottom_left': {'x_offset': 0, 'y_offset': 0},
-            'bottom_right': {'x_offset': 0, 'y_offset': 0}
+            'bottom_right': {'x_offset': 0, 'y_offset': 0},
+            'header_left': {'x_offset': 0, 'y_offset': 0},
+            'header_right': {'x_offset': 0, 'y_offset': 0},
+            'footer_left': {'x_offset': 0, 'y_offset': 0},
+            'footer_right': {'x_offset': 0, 'y_offset': 0}
+        },
+        'font_size_settings': {
+            'top_left': 100,
+            'top_right': 100,
+            'bottom_left': 100,
+            'bottom_right': 100,
+            'header_left': 100,
+            'header_right': 100,
+            'footer_left': 100,
+            'footer_right': 100
         },
         'image_overlay_settings': {
             'enabled': False,
@@ -130,6 +148,7 @@ def ensure_session_state_initialized():
             'max_height': 30
         },
         'symmetrical_offsets': False,
+        'symmetrical_font_sizes': False,
         'font_settings': {
             'main_font': 'system_arial',
             'bold_font': 'system_arial',
@@ -450,19 +469,31 @@ class DynamicTemplateManager:
                 "top_left": {"x": 0.05, "y": 0.15, "align": "left", "max_width": 0.4, "section": "main"},
                 "top_right": {"x": 0.95, "y": 0.15, "align": "right", "max_width": 0.4, "section": "main"},
                 "bottom_left": {"x": 0.05, "y": 0.85, "align": "left", "max_width": 0.4, "section": "main"},
-                "bottom_right": {"x": 0.95, "y": 0.85, "align": "right", "max_width": 0.4, "section": "main"}
+                "bottom_right": {"x": 0.95, "y": 0.85, "align": "right", "max_width": 0.4, "section": "main"},
+                "header_left": {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "header"},
+                "header_right": {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "header"},
+                "footer_left": {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "footer"},
+                "footer_right": {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "footer"}
             },
             "font_sizes": {
                 "top_left": 32,
                 "top_right": 28,
                 "bottom_left": 24,
-                "bottom_right": 20
+                "bottom_right": 20,
+                "header_left": 24,
+                "header_right": 20,
+                "footer_left": 18,
+                "footer_right": 16
             },
             "colors": {
                 "top_left": [0, 0, 0, 255],
                 "top_right": [0, 0, 0, 255],
                 "bottom_left": [0, 0, 0, 255],
-                "bottom_right": [0, 0, 0, 255]
+                "bottom_right": [0, 0, 0, 255],
+                "header_left": [255, 255, 255, 255],
+                "header_right": [255, 255, 255, 255],
+                "footer_left": [255, 255, 255, 255],
+                "footer_right": [255, 255, 255, 255]
             },
             "effects": {
                 "shadow": True,
@@ -490,19 +521,31 @@ class DynamicTemplateManager:
                 "top_left": {"x": 0.5, "y": 0.2, "align": "center", "max_width": 0.8, "section": "main"},
                 "top_right": {"x": 0.5, "y": 0.35, "align": "center", "max_width": 0.8, "section": "main"},
                 "bottom_left": {"x": 0.5, "y": 0.65, "align": "center", "max_width": 0.8, "section": "main"},
-                "bottom_right": {"x": 0.5, "y": 0.8, "align": "center", "max_width": 0.8, "section": "main"}
+                "bottom_right": {"x": 0.5, "y": 0.8, "align": "center", "max_width": 0.8, "section": "main"},
+                "header_left": {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "header"},
+                "header_right": {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "header"},
+                "footer_left": {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "footer"},
+                "footer_right": {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "footer"}
             },
             "font_sizes": {
                 "top_left": 36,
                 "top_right": 30,
                 "bottom_left": 22,
-                "bottom_right": 18
+                "bottom_right": 18,
+                "header_left": 20,
+                "header_right": 18,
+                "footer_left": 16,
+                "footer_right": 14
             },
             "colors": {
                 "top_left": [33, 37, 41, 255],
                 "top_right": [52, 58, 64, 255],
                 "bottom_left": [108, 117, 125, 255],
-                "bottom_right": [73, 80, 87, 255]
+                "bottom_right": [73, 80, 87, 255],
+                "header_left": [33, 37, 41, 255],
+                "header_right": [52, 58, 64, 255],
+                "footer_left": [108, 117, 125, 255],
+                "footer_right": [73, 80, 87, 255]
             },
             "effects": {
                 "shadow": False,
@@ -527,22 +570,34 @@ class DynamicTemplateManager:
                 "main": "gradient_warm"
             },
             "text_positions": {
-                "top_left": {"x": 0.5, "y": 0.1, "align": "center", "max_width": 0.7, "section": "header"},
-                "top_right": {"x": 0.5, "y": 0.25, "align": "center", "max_width": 0.7, "section": "main"},
+                "top_left": {"x": 0.05, "y": 0.1, "align": "left", "max_width": 0.4, "section": "header"},
+                "top_right": {"x": 0.95, "y": 0.1, "align": "right", "max_width": 0.4, "section": "header"},
                 "bottom_left": {"x": 0.05, "y": 0.6, "align": "left", "max_width": 0.45, "section": "main"},
-                "bottom_right": {"x": 0.95, "y": 0.6, "align": "right", "max_width": 0.45, "section": "main"}
+                "bottom_right": {"x": 0.95, "y": 0.6, "align": "right", "max_width": 0.45, "section": "main"},
+                "header_left": {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "header"},
+                "header_right": {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "header"},
+                "footer_left": {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "footer"},
+                "footer_right": {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "footer"}
             },
             "font_sizes": {
                 "top_left": 40,
                 "top_right": 48,
                 "bottom_left": 22,
-                "bottom_right": 22
+                "bottom_right": 22,
+                "header_left": 28,
+                "header_right": 24,
+                "footer_left": 20,
+                "footer_right": 18
             },
             "colors": {
                 "top_left": [255, 255, 255, 255],
                 "top_right": [218, 165, 32, 255],
                 "bottom_left": [33, 37, 41, 255],
-                "bottom_right": [33, 37, 41, 255]
+                "bottom_right": [33, 37, 41, 255],
+                "header_left": [255, 255, 255, 255],
+                "header_right": [218, 165, 32, 255],
+                "footer_left": [255, 255, 255, 255],
+                "footer_right": [255, 255, 255, 255]
             },
             "effects": {
                 "shadow": True,
@@ -913,6 +968,10 @@ class AdvancedExcelProcessor:
             'image_url': None,
             'filename': None,
             'overlay_image_url': None,
+            'header_left': None,
+            'header_right': None,
+            'footer_left': None,
+            'footer_right': None,
             'confidence': {}  # Уверенность в каждом предположении
         }
         
@@ -1023,9 +1082,32 @@ class AdvancedExcelProcessor:
             elif stats['unique_count'] == len(df) and stats['max_length'] < 20:
                 suggestions['filename'] = col
                 suggestions['confidence']['filename'] = 60
+            
+            # Определяем header_left (тег, категория)
+            if any(keyword in col_lower for keyword in ['тег', 'tag', 'категория', 'category', 'раздел', 'section']):
+                suggestions['header_left'] = col
+                suggestions['confidence']['header_left'] = 75
+            
+            # Определяем header_right (бренд, производитель)
+            if any(keyword in col_lower for keyword in ['бренд', 'brand', 'производитель', 'manufacturer', 'марка']):
+                suggestions['header_right'] = col
+                suggestions['confidence']['header_right'] = 75
+            
+            # Определяем footer_left (доставка, сроки)
+            if any(keyword in col_lower for keyword in ['доставка', 'delivery', 'срок', 'term', 'время', 'time']):
+                suggestions['footer_left'] = col
+                suggestions['confidence']['footer_left'] = 70
+            
+            # Определяем footer_right (рейтинг, отзывы)
+            if any(keyword in col_lower for keyword in ['рейтинг', 'rating', 'отзывы', 'reviews', 'оценка', 'score']):
+                suggestions['footer_right'] = col
+                suggestions['confidence']['footer_right'] = 70
         
         # Заполняем пропущенные значения первыми подходящими колонками
-        for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right', 'filename']:
+        all_positions = ['top_left', 'top_right', 'bottom_left', 'bottom_right', 'filename', 
+                        'header_left', 'header_right', 'footer_left', 'footer_right']
+        
+        for position in all_positions:
             if suggestions[position] is None:
                 for col, stats in column_stats.items():
                     if col not in suggestions.values():
@@ -1651,7 +1733,7 @@ class ImageProcessor:
     
     @staticmethod
     def add_text_to_image(img: Image.Image, text_data: Dict, template_id: str = "modern_shop") -> Image.Image:
-        """Добавление текста на изображение по шаблону - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+        """Добавление текста на изображение по шаблону - ИСПРАВЛЕННАЯ ВЕРСИЯ С ДОПОЛНИТЕЛЬНЫМИ ПОЛЯМИ"""
         try:
             # Загружаем шаблон
             template = DynamicTemplateManager.load_template(template_id)
@@ -1695,10 +1777,14 @@ class ImageProcessor:
             footer_safe_top = header_height + main_height + safe_margin
             footer_safe_bottom = img.height - safe_margin
             
-            # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем добавление текста по краям ===
+            # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Добавляем текст во все позиции, включая шапку и футер ===
+            # Список всех возможных позиций текста
+            all_positions = ['top_left', 'top_right', 'bottom_left', 'bottom_right',
+                           'header_left', 'header_right', 'footer_left', 'footer_right']
+            
             # Сначала определяем какие позиции текста заполнены
             filled_positions = []
-            for position_key in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+            for position_key in all_positions:
                 if position_key in text_data and text_data[position_key]:
                     text = str(text_data[position_key]).strip()
                     if text and text.lower() not in ['nan', 'none', 'null', '']:
@@ -1724,6 +1810,14 @@ class ImageProcessor:
                         position_config = {"x": 0.05, "y": 0.85, "align": "left", "max_width": 0.4, "section": "main"}
                     elif position_key == 'bottom_right':
                         position_config = {"x": 0.95, "y": 0.85, "align": "right", "max_width": 0.4, "section": "main"}
+                    elif position_key == 'header_left':
+                        position_config = {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "header"}
+                    elif position_key == 'header_right':
+                        position_config = {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "header"}
+                    elif position_key == 'footer_left':
+                        position_config = {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "footer"}
+                    elif position_key == 'footer_right':
+                        position_config = {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "footer"}
                     else:
                         position_config = {"x": 0.5, "y": 0.5, "align": "center", "max_width": 0.8, "section": "main"}
                 
@@ -1736,7 +1830,7 @@ class ImageProcessor:
                 
                 # === ИСПРАВЛЕНИЕ: Правильное вычисление позиции для каждой секции ===
                 if section == "header":
-                    if header_height > 20:  # Только если шапка достаточно большая
+                    if header_height > 10:  # Только если шапка достаточно большая
                         # Вычисляем позицию внутри шапки
                         section_y_range = header_safe_bottom - header_safe_top
                         if section_y_range > 0:
@@ -1747,11 +1841,11 @@ class ImageProcessor:
                         # Ограничиваем по вертикали в пределах шапки
                         y = max(header_safe_top, min(y, header_safe_bottom))
                     else:
-                        # Если шапка маленькая, размещаем в верхней части основной секции
-                        y = main_safe_top + (y_percent * 0.3 * (main_safe_bottom - main_safe_top))
+                        # Если шапка маленькая, пропускаем текст в шапке
+                        continue
                 
                 elif section == "footer":
-                    if footer_height > 20:  # Только если футер достаточно большой
+                    if footer_height > 10:  # Только если футер достаточно большой
                         # Вычисляем позицию внутри футера
                         section_y_range = footer_safe_bottom - footer_safe_top
                         if section_y_range > 0:
@@ -1762,8 +1856,8 @@ class ImageProcessor:
                         # Ограничиваем по вертикали в пределах футера
                         y = max(footer_safe_top, min(y, footer_safe_bottom))
                     else:
-                        # Если футер маленький, размещаем в нижней части основной секции
-                        y = main_safe_bottom - ((1 - y_percent) * 0.3 * (main_safe_bottom - main_safe_top))
+                        # Если футер маленький, пропускаем текст в футере
+                        continue
                 
                 else:  # section == "main" или по умолчанию
                     # Вычисляем позицию внутри основной секции
@@ -1797,14 +1891,24 @@ class ImageProcessor:
                 # Определяем выравнивание
                 align = position_config.get("align", "center")
                 
-                # Размер шрифта
+                # === ДОПОЛНЕНИЕ: Получаем настройки размера шрифта ===
+                # Базовый размер из шаблона
                 font_sizes = template.get("font_sizes", {})
                 base_size = font_sizes.get(position_key, 24)
-                font_size = int(base_size * font_size_multiplier)
                 
-                # Динамический размер шрифта
-                min_font_size = 12
-                max_font_size = min(img.width, img.height) // 15  # Уменьшил делитель для большего шрифта
+                # Настройки масштаба шрифта из session_state
+                font_size_settings = safe_get_session_state('font_size_settings', {})
+                size_percentage = font_size_settings.get(position_key, 100) / 100.0
+                
+                # Общий множитель размера шрифта
+                font_size_multiplier = font_settings.get('font_size_multiplier', 1.0)
+                
+                # Вычисляем итоговый размер шрифта
+                font_size = int(base_size * size_percentage * font_size_multiplier)
+                
+                # Динамический размер шрифта с ограничениями
+                min_font_size = 8
+                max_font_size = min(img.width, img.height) // 10
                 font_size = max(min_font_size, min(font_size, max_font_size))
                 
                 # Загружаем шрифт
@@ -1873,7 +1977,7 @@ class ImageProcessor:
                         # anchor="lm" - левый край по x, центр по y
                         draw.text((x, y), text, font=font, fill=text_color, anchor="lm")
                     
-                    logger.debug(f"Текст добавлен: {position_key} = '{text[:30]}...' at ({x:.1f},{y:.1f})")
+                    logger.debug(f"Текст добавлен: {position_key} = '{text[:30]}...' at ({x:.1f},{y:.1f}), размер: {font_size}")
                     
                 except Exception as e:
                     logger.error(f"Ошибка добавления текста '{text[:30]}...': {e}")
@@ -2136,9 +2240,12 @@ class InfographicGenerator:
                     'message': f'Нет URL изображения в колонке "{url_column_name}"'
                 }
             
-            # Получаем данные из строки
+            # Получаем данные из строки - ВСЕ 8 ПОЛЕЙ
             text_data = {}
-            for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+            all_positions = ['top_left', 'top_right', 'bottom_left', 'bottom_right',
+                           'header_left', 'header_right', 'footer_left', 'footer_right']
+            
+            for position in all_positions:
                 if position in column_mapping and column_mapping[position]:
                     col = column_mapping[position]
                     if col in row_dict:
@@ -2266,7 +2373,7 @@ class InfographicGenerator:
             
             final_img.paste(main_img_resized, (x_offset, y_offset))
             
-            # Добавляем текст
+            # Добавляем текст (теперь 8 полей вместо 4)
             final_img = self.image_processor.add_text_to_image(
                 final_img, text_data, current_template
             )
@@ -2631,7 +2738,7 @@ class UIComponents:
             with col1:
                 header_height = st.slider(
                     "Высота шапки (%)",
-                    0, 40, 15,
+                    5, 40, 15,
                     key="header_height"
                 )
                 st.session_state.background_settings['header_height'] = min(header_height, 100)
@@ -2639,7 +2746,7 @@ class UIComponents:
             with col2:
                 footer_height = st.slider(
                     "Высота футера (%)",
-                    0, 40, 10,
+                    5, 40, 10,
                     key="footer_height"
                 )
                 st.session_state.background_settings['footer_height'] = min(footer_height, 100 - header_height)
@@ -2746,7 +2853,7 @@ class UIComponents:
             st.divider()
             processed_count = safe_get_session_state('processed_count', 0)
             st.caption(f"Обработано: {processed_count}")
-            st.caption("Версия: 8.0")
+            st.caption("Версия: 8.1")
     
     @staticmethod
     def render_column_mapping():
@@ -2761,55 +2868,95 @@ class UIComponents:
         col1, col2 = st.columns(2)
         
         with col1:
-            # Верхний левый
+            # Верхний левый (основная секция)
             top_left_default = st.session_state.column_mapping['top_left']
             top_left_idx = available_columns.index(top_left_default) if top_left_default in available_columns else 0
             st.session_state.column_mapping['top_left'] = st.selectbox(
-                "Верхний левый",
+                "Верхний левый (основной)",
                 available_columns,
                 index=top_left_idx,
                 key="col_top_left"
             )
             
-            # Верхний правый
+            # Верхний правый (основная секция)
             top_right_default = st.session_state.column_mapping['top_right']
             top_right_idx = available_columns.index(top_right_default) if top_right_default in available_columns else min(1, len(available_columns)-1)
             st.session_state.column_mapping['top_right'] = st.selectbox(
-                "Верхний правый",
+                "Верхний правый (основной)",
                 available_columns,
                 index=top_right_idx,
                 key="col_top_right"
             )
             
-            # URL изображения
-            image_url_default = st.session_state.column_mapping['image_url']
-            image_url_idx = available_columns.index(image_url_default) if image_url_default in available_columns else min(2, len(available_columns)-1)
-            st.session_state.column_mapping['image_url'] = st.selectbox(
-                "URL изображения",
-                available_columns,
-                index=image_url_idx,
-                key="col_image_url"
-            )
-        
-        with col2:
-            # Нижний левый
+            # Нижний левый (основная секция)
             bottom_left_default = st.session_state.column_mapping['bottom_left']
-            bottom_left_idx = available_columns.index(bottom_left_default) if bottom_left_default in available_columns else min(3, len(available_columns)-1)
+            bottom_left_idx = available_columns.index(bottom_left_default) if bottom_left_default in available_columns else min(2, len(available_columns)-1)
             st.session_state.column_mapping['bottom_left'] = st.selectbox(
-                "Нижний левый",
+                "Нижний левый (основной)",
                 available_columns,
                 index=bottom_left_idx,
                 key="col_bottom_left"
             )
             
-            # Нижний правый
+            # Нижний правый (основная секция)
             bottom_right_default = st.session_state.column_mapping['bottom_right']
-            bottom_right_idx = available_columns.index(bottom_right_default) if bottom_right_default in available_columns else min(4, len(available_columns)-1)
+            bottom_right_idx = available_columns.index(bottom_right_default) if bottom_right_default in available_columns else min(3, len(available_columns)-1)
             st.session_state.column_mapping['bottom_right'] = st.selectbox(
-                "Нижний правый",
+                "Нижний правый (основной)",
                 available_columns,
                 index=bottom_right_idx,
                 key="col_bottom_right"
+            )
+        
+        with col2:
+            # Левый верхний (шапка)
+            header_left_default = st.session_state.column_mapping['header_left']
+            header_left_idx = available_columns.index(header_left_default) if header_left_default in available_columns else min(4, len(available_columns)-1)
+            st.session_state.column_mapping['header_left'] = st.selectbox(
+                "Левый (шапка)",
+                available_columns,
+                index=header_left_idx,
+                key="col_header_left"
+            )
+            
+            # Правый верхний (шапка)
+            header_right_default = st.session_state.column_mapping['header_right']
+            header_right_idx = available_columns.index(header_right_default) if header_right_default in available_columns else min(5, len(available_columns)-1)
+            st.session_state.column_mapping['header_right'] = st.selectbox(
+                "Правый (шапка)",
+                available_columns,
+                index=header_right_idx,
+                key="col_header_right"
+            )
+            
+            # Левый нижний (футер)
+            footer_left_default = st.session_state.column_mapping['footer_left']
+            footer_left_idx = available_columns.index(footer_left_default) if footer_left_default in available_columns else min(6, len(available_columns)-1)
+            st.session_state.column_mapping['footer_left'] = st.selectbox(
+                "Левый (футер)",
+                available_columns,
+                index=footer_left_idx,
+                key="col_footer_left"
+            )
+            
+            # Правый нижний (футер)
+            footer_right_default = st.session_state.column_mapping['footer_right']
+            footer_right_idx = available_columns.index(footer_right_default) if footer_right_default in available_columns else min(7, len(available_columns)-1)
+            st.session_state.column_mapping['footer_right'] = st.selectbox(
+                "Правый (футер)",
+                available_columns,
+                index=footer_right_idx,
+                key="col_footer_right"
+            )
+            
+            # URL изображения
+            image_url_default = st.session_state.column_mapping['image_url']
+            image_url_idx = available_columns.index(image_url_default) if image_url_default in available_columns else min(8, len(available_columns)-1)
+            st.session_state.column_mapping['image_url'] = st.selectbox(
+                "URL изображения",
+                available_columns,
+                index=image_url_idx,
+                key="col_image_url"
             )
             
             # Имя файла
@@ -2875,7 +3022,7 @@ class UIComponents:
                 st.session_state.font_settings['main_font'] = font_keys[font_options.index(selected)]
                 
                 st.session_state.font_settings['font_size_multiplier'] = st.slider(
-                    "Размер шрифта",
+                    "Общий размер шрифта",
                     0.5, 2.0, 1.0, 0.1,
                     key="font_size"
                 )
@@ -2888,7 +3035,7 @@ class UIComponents:
         symmetrical = st.checkbox(
             "Симметричные смещения",
             value=st.session_state.symmetrical_offsets,
-            key="symmetrical"
+            key="symmetrical_offsets"
         )
         st.session_state.symmetrical_offsets = symmetrical
         
@@ -2907,12 +3054,17 @@ class UIComponents:
                     key="sym_y"
                 )
             
-            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right',
+                       'header_left', 'header_right', 'footer_left', 'footer_right']:
                 st.session_state.text_offset_settings[key] = {
                     'x_offset': x_offset,
                     'y_offset': y_offset
                 }
         else:
+            st.info("Настройте смещение для каждого текстового поля отдельно")
+            
+            # Основная секция
+            st.markdown("**Основная секция:**")
             cols = st.columns(4)
             positions = ['top_left', 'top_right', 'bottom_left', 'bottom_right']
             labels = ['↖️ Верх. левый', '↗️ Верх. правый', '↙️ Низ. левый', '↘️ Низ. правый']
@@ -2936,13 +3088,148 @@ class UIComponents:
                         'x_offset': x,
                         'y_offset': y
                     }
+            
+            # Шапка
+            st.markdown("**Шапка:**")
+            cols = st.columns(2)
+            header_positions = ['header_left', 'header_right']
+            header_labels = ['⬅️ Левый (шапка)', '➡️ Правый (шапка)']
+            
+            for i, (pos, label) in enumerate(zip(header_positions, header_labels)):
+                with cols[i]:
+                    st.markdown(f"**{label}**")
+                    x = st.number_input(
+                        "X (%)",
+                        -100, 100,
+                        st.session_state.text_offset_settings[pos]['x_offset'],
+                        key=f"offset_x_{pos}"
+                    )
+                    y = st.number_input(
+                        "Y (%)",
+                        -100, 100,
+                        st.session_state.text_offset_settings[pos]['y_offset'],
+                        key=f"offset_y_{pos}"
+                    )
+                    st.session_state.text_offset_settings[pos] = {
+                        'x_offset': x,
+                        'y_offset': y
+                    }
+            
+            # Футер
+            st.markdown("**Футер:**")
+            cols = st.columns(2)
+            footer_positions = ['footer_left', 'footer_right']
+            footer_labels = ['⬅️ Левый (футер)', '➡️ Правый (футер)']
+            
+            for i, (pos, label) in enumerate(zip(footer_positions, footer_labels)):
+                with cols[i]:
+                    st.markdown(f"**{label}**")
+                    x = st.number_input(
+                        "X (%)",
+                        -100, 100,
+                        st.session_state.text_offset_settings[pos]['x_offset'],
+                        key=f"offset_x_{pos}"
+                    )
+                    y = st.number_input(
+                        "Y (%)",
+                        -100, 100,
+                        st.session_state.text_offset_settings[pos]['y_offset'],
+                        key=f"offset_y_{pos}"
+                    )
+                    st.session_state.text_offset_settings[pos] = {
+                        'x_offset': x,
+                        'y_offset': y
+                    }
         
-        if st.button("🔄 Сбросить", key="reset_offsets"):
-            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+        if st.button("🔄 Сбросить смещения", key="reset_offsets"):
+            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right',
+                       'header_left', 'header_right', 'footer_left', 'footer_right']:
                 st.session_state.text_offset_settings[key] = {
                     'x_offset': 0,
                     'y_offset': 0
                 }
+            st.rerun()
+    
+    @staticmethod
+    def render_font_sizes():
+        """Настройки размера текста"""
+        st.subheader("🔠 Размер текста")
+        
+        symmetrical = st.checkbox(
+            "Одинаковый размер для всех полей",
+            value=st.session_state.symmetrical_font_sizes,
+            key="symmetrical_font_sizes"
+        )
+        st.session_state.symmetrical_font_sizes = symmetrical
+        
+        if symmetrical:
+            size_percentage = st.slider(
+                "Размер текста (%)",
+                50, 200, 100,
+                key="sym_font_size"
+            )
+            
+            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right',
+                       'header_left', 'header_right', 'footer_left', 'footer_right']:
+                st.session_state.font_size_settings[key] = size_percentage
+        else:
+            st.info("Настройте размер для каждого текстового поля отдельно")
+            
+            # Основная секция
+            st.markdown("**Основная секция:**")
+            cols = st.columns(4)
+            positions = ['top_left', 'top_right', 'bottom_left', 'bottom_right']
+            labels = ['↖️ Верх. левый', '↗️ Верх. правый', '↙️ Низ. левый', '↘️ Низ. правый']
+            
+            for i, (pos, label) in enumerate(zip(positions, labels)):
+                with cols[i]:
+                    st.markdown(f"**{label}**")
+                    size = st.slider(
+                        "Размер (%)",
+                        50, 200,
+                        st.session_state.font_size_settings[pos],
+                        key=f"font_size_{pos}"
+                    )
+                    st.session_state.font_size_settings[pos] = size
+            
+            # Шапка
+            st.markdown("**Шапка:**")
+            cols = st.columns(2)
+            header_positions = ['header_left', 'header_right']
+            header_labels = ['⬅️ Левый (шапка)', '➡️ Правый (шапка)']
+            
+            for i, (pos, label) in enumerate(zip(header_positions, header_labels)):
+                with cols[i]:
+                    st.markdown(f"**{label}**")
+                    size = st.slider(
+                        "Размер (%)",
+                        50, 200,
+                        st.session_state.font_size_settings[pos],
+                        key=f"font_size_{pos}"
+                    )
+                    st.session_state.font_size_settings[pos] = size
+            
+            # Футер
+            st.markdown("**Футер:**")
+            cols = st.columns(2)
+            footer_positions = ['footer_left', 'footer_right']
+            footer_labels = ['⬅️ Левый (футер)', '➡️ Правый (футер)']
+            
+            for i, (pos, label) in enumerate(zip(footer_positions, footer_labels)):
+                with cols[i]:
+                    st.markdown(f"**{label}**")
+                    size = st.slider(
+                        "Размер (%)",
+                        50, 200,
+                        st.session_state.font_size_settings[pos],
+                        key=f"font_size_{pos}"
+                    )
+                    st.session_state.font_size_settings[pos] = size
+        
+        if st.button("🔄 Сбросить размеры", key="reset_font_sizes"):
+            for key in ['top_left', 'top_right', 'bottom_left', 'bottom_right',
+                       'header_left', 'header_right', 'footer_left', 'footer_right']:
+                st.session_state.font_size_settings[key] = 100
             st.rerun()
     
     @staticmethod
@@ -3074,6 +3361,7 @@ class UIComponents:
         # Настройки
         UIComponents.render_font_settings()
         UIComponents.render_text_offsets()
+        UIComponents.render_font_sizes()  # НОВОЕ: настройка размера текста
         UIComponents.render_overlay_settings()
         UIComponents.render_column_mapping()
         
@@ -3097,9 +3385,12 @@ class UIComponents:
             with st.spinner("Выполнение теста..."):
                 row = st.session_state.df.iloc[test_row]
                 
-                # Получаем данные
+                # Получаем данные - ВСЕ 8 ПОЛЕЙ
                 text_data = {}
-                for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
+                all_positions = ['top_left', 'top_right', 'bottom_left', 'bottom_right',
+                               'header_left', 'header_right', 'footer_left', 'footer_right']
+                
+                for position in all_positions:
                     if st.session_state.column_mapping[position]:
                         col = st.session_state.column_mapping[position]
                         if col in row:
@@ -3174,7 +3465,7 @@ class UIComponents:
                         final_img = canvas.copy()
                         final_img.paste(img_resized, (x_offset, y_offset))
                         
-                        # Добавляем текст
+                        # Добавляем текст (теперь 8 полей вместо 4)
                         final_img = generator.image_processor.add_text_to_image(
                             final_img, text_data, st.session_state.current_template
                         )
@@ -3657,7 +3948,7 @@ def show_main_interface():
     ensure_session_state_initialized()
     
     # Заголовок
-    st.title("🚀 Генератор Инфографики PRO v8.0")
+    st.title("🚀 Генератор Инфографики PRO v8.1")
     st.markdown("---")
     
     # Создаем табы
