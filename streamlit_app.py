@@ -24,7 +24,7 @@ import random
 # НАСТРОЙКА ПРИЛОЖЕНИЯ
 # ============================
 st.set_page_config(
-    page_title="🎯 Генератор Инфографики PRO v7.0",
+    page_title="🎯 Генератор Инфографики PRO v8.0",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -178,7 +178,9 @@ def ensure_session_state_initialized():
         },
         'template_preview_size': 400,
         'app_initialized': False,
-        'template_cache_initialized': False
+        'template_cache_initialized': False,
+        'current_batch': None,
+        'current_batch_index': 0
     }
     
     for key, default_value in defaults.items():
@@ -646,6 +648,528 @@ class DynamicTemplateManager:
         }
 
 # ============================
+# УЛУЧШЕННЫЙ ПРОЦЕССОР EXCEL
+# ============================
+class AdvancedExcelProcessor:
+    """Улучшенный класс для обработки Excel файлов"""
+    
+    @staticmethod
+    def detect_excel_format(uploaded_file) -> str:
+        """Определение формата Excel файла"""
+        file_name = uploaded_file.name.lower()
+        
+        if file_name.endswith('.xlsx'):
+            return 'xlsx'
+        elif file_name.endswith('.xls'):
+            return 'xls'
+        elif file_name.endswith('.xlsm'):
+            return 'xlsm'
+        elif file_name.endswith('.xlsb'):
+            return 'xlsb'
+        elif file_name.endswith('.ods'):
+            return 'ods'
+        elif file_name.endswith('.csv'):
+            return 'csv'
+        else:
+            # Пытаемся определить по содержимому
+            try:
+                content = uploaded_file.getvalue()[:50]
+                if b'PK' in content:  # ZIP signature (xlsx, xlsm)
+                    return 'xlsx'
+                elif b'\xD0\xCF\x11\xE0' in content:  # OLE2 signature (xls)
+                    return 'xls'
+            except:
+                pass
+            return 'xlsx'  # По умолчанию
+    
+    @staticmethod
+    def read_excel_with_fallback(uploaded_file) -> Optional[pd.DataFrame]:
+        """Чтение Excel файла с несколькими попытками и обработкой ошибок"""
+        try:
+            # Сбрасываем позицию файла
+            uploaded_file.seek(0)
+            
+            # Определяем формат
+            file_format = AdvancedExcelProcessor.detect_excel_format(uploaded_file)
+            
+            # Чтение в зависимости от формата
+            if file_format in ['xlsx', 'xlsm']:
+                try:
+                    df = pd.read_excel(
+                        uploaded_file,
+                        engine='openpyxl',
+                        dtype=str,  # Читаем все как строку
+                        na_values=['', 'NA', 'NaN', 'NULL', 'None', 'null'],
+                        keep_default_na=False
+                    )
+                except Exception as e:
+                    logger.warning(f"Openpyxl не сработал: {e}, пробуем xlrd")
+                    uploaded_file.seek(0)
+                    df = pd.read_excel(
+                        uploaded_file,
+                        engine='xlrd',
+                        dtype=str
+                    )
+            
+            elif file_format == 'xls':
+                try:
+                    df = pd.read_excel(
+                        uploaded_file,
+                        engine='xlrd',
+                        dtype=str
+                    )
+                except Exception as e:
+                    logger.warning(f"Xlrd не сработал: {e}, пробуем openpyxl")
+                    uploaded_file.seek(0)
+                    df = pd.read_excel(
+                        uploaded_file,
+                        engine='openpyxl',
+                        dtype=str
+                    )
+            
+            elif file_format == 'ods':
+                try:
+                    # Для ODS используем odfpy
+                    import odf
+                    df = pd.read_excel(
+                        uploaded_file,
+                        engine='odf',
+                        dtype=str
+                    )
+                except ImportError:
+                    st.error("Для чтения ODS файлов установите odfpy: pip install odfpy")
+                    return None
+            
+            elif file_format == 'csv':
+                try:
+                    uploaded_file.seek(0)
+                    # Пробуем разные кодировки
+                    encodings = ['utf-8', 'cp1251', 'latin1', 'iso-8859-1']
+                    for encoding in encodings:
+                        try:
+                            uploaded_file.seek(0)
+                            df = pd.read_csv(uploaded_file, dtype=str, encoding=encoding)
+                            logger.info(f"CSV прочитан с кодировкой {encoding}")
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                except Exception as e:
+                    logger.error(f"Ошибка чтения CSV: {e}")
+                    return None
+            
+            else:
+                # Пробуем все доступные движки
+                engines = ['openpyxl', 'xlrd', 'odf']
+                for engine in engines:
+                    try:
+                        uploaded_file.seek(0)
+                        df = pd.read_excel(uploaded_file, engine=engine, dtype=str)
+                        logger.info(f"Успешно прочитано с помощью {engine}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Движок {engine} не сработал: {e}")
+                        df = None
+                
+                if df is None:
+                    raise Exception("Не удалось прочитать файл ни одним из движков")
+            
+            # Базовая очистка данных
+            df = AdvancedExcelProcessor.clean_dataframe(df)
+            
+            logger.info(f"Файл успешно загружен: {uploaded_file.name}, строк: {len(df)}, колонок: {len(df.columns)}")
+            return df
+            
+        except Exception as e:
+            logger.error(f"Критическая ошибка чтения Excel: {e}")
+            st.error(f"Ошибка чтения файла: {str(e)}")
+            
+            # Попробуем CSV как запасной вариант
+            try:
+                uploaded_file.seek(0)
+                if uploaded_file.name.endswith(('.csv', '.txt')):
+                    df = pd.read_csv(uploaded_file, dtype=str, encoding='utf-8')
+                    df = AdvancedExcelProcessor.clean_dataframe(df)
+                    st.info("Файл прочитан как CSV")
+                    return df
+            except:
+                pass
+            
+            return None
+    
+    @staticmethod
+    def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+        """Очистка и нормализация DataFrame"""
+        if df is None or df.empty:
+            return pd.DataFrame()
+        
+        # Создаем копию для безопасности
+        df = df.copy()
+        
+        # 1. Убираем пробелы в именах колонок
+        df.columns = [str(col).strip() for col in df.columns]
+        
+        # 2. Заменяем NaN и None на пустые строки
+        df = df.fillna('')
+        
+        # 3. Убираем лишние пробелы в строковых данных
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                df[col] = df[col].apply(lambda x: str(x).strip() if isinstance(x, str) else x)
+        
+        # 4. Удаляем полностью пустые строки
+        initial_len = len(df)
+        df = df[df.astype(str).ne('').any(axis=1)].copy()
+        removed_rows = initial_len - len(df)
+        
+        if removed_rows > 0:
+            logger.info(f"Удалено {removed_rows} полностью пустых строк")
+        
+        # 5. Удаляем дубликаты
+        initial_len = len(df)
+        df = df.drop_duplicates().copy()
+        removed_duplicates = initial_len - len(df)
+        
+        if removed_duplicates > 0:
+            logger.info(f"Удалено {removed_duplicates} дубликатов")
+        
+        # 6. Сброс индекса
+        df = df.reset_index(drop=True)
+        
+        return df
+    
+    @staticmethod
+    def validate_dataframe(df: pd.DataFrame) -> Dict:
+        """Валидация DataFrame и проверка качества данных"""
+        validation_result = {
+            'is_valid': True,
+            'total_rows': len(df),
+            'total_columns': len(df.columns),
+            'empty_cells': 0,
+            'url_columns': [],
+            'warnings': [],
+            'errors': []
+        }
+        
+        if df is None or df.empty:
+            validation_result.update({
+                'is_valid': False,
+                'errors': ['DataFrame пустой']
+            })
+            return validation_result
+        
+        # Проверяем наличие данных в колонках
+        for col in df.columns:
+            non_empty_count = df[col].astype(bool).sum()
+            empty_count = len(df) - non_empty_count
+            
+            if empty_count > 0:
+                validation_result['empty_cells'] += empty_count
+            
+            # Автоопределение колонок с URL
+            if any(keyword in str(col).lower() for keyword in ['url', 'link', 'image', 'фото', 'картинка', 'ссылка']):
+                validation_result['url_columns'].append(col)
+                
+                # Проверяем URL на валидность
+                url_samples = df[col].head(5).dropna().tolist()
+                valid_urls = 0
+                for url in url_samples:
+                    if isinstance(url, str) and len(url) > 10:
+                        if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
+                            valid_urls += 1
+                
+                if valid_urls == 0 and len(url_samples) > 0:
+                    validation_result['warnings'].append(f"Колонка '{col}' может не содержать валидные URL изображений")
+        
+        # Проверяем наличие критических колонок
+        required_keywords = ['url', 'image', 'name', 'title', 'product']
+        found_keywords = []
+        
+        for col in df.columns:
+            col_lower = str(col).lower()
+            for keyword in required_keywords:
+                if keyword in col_lower and col not in found_keywords:
+                    found_keywords.append(col)
+        
+        if len(found_keywords) == 0:
+            validation_result['warnings'].append("Не найдены колонки с URL или названиями товаров")
+        
+        # Проверка на слишком большие файлы
+        if len(df) > 10000:
+            validation_result['warnings'].append(f"Файл содержит {len(df)} строк. Рекомендуется разбить на части.")
+        
+        if len(df.columns) > 50:
+            validation_result['warnings'].append(f"Файл содержит {len(df.columns)} колонок. Возможно есть лишние данные.")
+        
+        return validation_result
+    
+    @staticmethod
+    def get_intelligent_column_suggestions(df: pd.DataFrame) -> Dict:
+        """Интеллектуальный подбор колонок с машинным обучением"""
+        suggestions = {
+            'top_left': None,
+            'top_right': None,
+            'bottom_left': None,
+            'bottom_right': None,
+            'image_url': None,
+            'filename': None,
+            'overlay_image_url': None,
+            'confidence': {}  # Уверенность в каждом предположении
+        }
+        
+        if df is None or df.empty:
+            return suggestions
+        
+        # Анализируем каждую колонку
+        column_stats = {}
+        
+        for col in df.columns:
+            col_str = str(col).lower()
+            col_data = df[col].dropna().astype(str)
+            
+            # Собираем статистику
+            stats = {
+                'name': col,
+                'original_name': col,
+                'has_urls': False,
+                'has_text': False,
+                'has_numbers': False,
+                'has_dates': False,
+                'unique_count': col_data.nunique(),
+                'max_length': col_data.str.len().max() if not col_data.empty else 0,
+                'avg_length': col_data.str.len().mean() if not col_data.empty else 0,
+                'keywords': []
+            }
+            
+            # Проверяем на URL
+            url_patterns = ['.jpg', '.jpeg', '.png', '.webp', 'http://', 'https://', 'www.']
+            url_count = sum(any(pattern in val.lower() for pattern in url_patterns) 
+                          for val in col_data.head(20))
+            
+            if url_count > 5:
+                stats['has_urls'] = True
+                stats['keywords'].extend(['url', 'image'])
+            
+            # Проверяем на числа (цены)
+            price_patterns = ['$', '€', '₽', 'руб', 'грн', 'цена', 'price', 'стоимость']
+            price_count = sum(any(pattern in val.lower() for pattern in price_patterns) 
+                            for val in col_data.head(20))
+            
+            # Пробуем преобразовать в числа
+            try:
+                numeric_data = pd.to_numeric(col_data.str.replace(r'[^\d.]', '', regex=True), errors='coerce')
+                numeric_percentage = (numeric_data.notna().sum() / len(col_data)) * 100
+                if numeric_percentage > 50:
+                    stats['has_numbers'] = True
+                    stats['keywords'].extend(['price', 'number', 'numeric'])
+            except:
+                pass
+            
+            # Проверяем на текст (названия)
+            text_keywords = ['название', 'name', 'title', 'товар', 'product', 'описание', 'description']
+            text_match = any(keyword in col_str for keyword in text_keywords)
+            
+            if text_match or stats['avg_length'] > 20:
+                stats['has_text'] = True
+                stats['keywords'].extend(['text', 'name', 'description'])
+            
+            column_stats[col] = stats
+        
+        # Интеллектуальный маппинг
+        for col, stats in column_stats.items():
+            col_lower = str(col).lower()
+            confidence = 0
+            
+            # Определяем image_url
+            if stats['has_urls']:
+                suggestions['image_url'] = col
+                suggestions['confidence']['image_url'] = 90
+            elif any(keyword in col_lower for keyword in ['url', 'link', 'image', 'фото', 'картинка']):
+                suggestions['image_url'] = col
+                suggestions['confidence']['image_url'] = 70
+            
+            # Определяем top_left (обычно название)
+            if any(keyword in col_lower for keyword in ['название', 'name', 'title', 'товар', 'product']):
+                suggestions['top_left'] = col
+                suggestions['confidence']['top_left'] = 85
+            elif stats['has_text'] and stats['unique_count'] > len(df) * 0.7:
+                suggestions['top_left'] = col
+                suggestions['confidence']['top_left'] = 60
+            
+            # Определяем top_right (обычно цена)
+            if any(keyword in col_lower for keyword in ['цена', 'price', 'стоимость', 'руб', '$', '€']):
+                suggestions['top_right'] = col
+                suggestions['confidence']['top_right'] = 80
+            elif stats['has_numbers'] and stats['unique_count'] < len(df) * 0.3:
+                suggestions['top_right'] = col
+                suggestions['confidence']['top_right'] = 65
+            
+            # Определяем bottom_left (описание)
+            if any(keyword in col_lower for keyword in ['описание', 'description', 'характеристики', 'features', 'детали']):
+                suggestions['bottom_left'] = col
+                suggestions['confidence']['bottom_left'] = 75
+            elif stats['has_text'] and stats['avg_length'] > 50:
+                suggestions['bottom_left'] = col
+                suggestions['confidence']['bottom_left'] = 55
+            
+            # Определяем bottom_right (скидка, акция)
+            if any(keyword in col_lower for keyword in ['скидка', 'discount', 'акция', 'sale', 'распродажа']):
+                suggestions['bottom_right'] = col
+                suggestions['confidence']['bottom_right'] = 70
+            
+            # Определяем filename (артикул, код)
+            if any(keyword in col_lower for keyword in ['артикул', 'sku', 'код', 'id', 'номер', 'article']):
+                suggestions['filename'] = col
+                suggestions['confidence']['filename'] = 85
+            elif stats['unique_count'] == len(df) and stats['max_length'] < 20:
+                suggestions['filename'] = col
+                suggestions['confidence']['filename'] = 60
+        
+        # Заполняем пропущенные значения первыми подходящими колонками
+        for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right', 'filename']:
+            if suggestions[position] is None:
+                for col, stats in column_stats.items():
+                    if col not in suggestions.values():
+                        suggestions[position] = col
+                        suggestions['confidence'][position] = 30
+                        break
+        
+        return suggestions
+    
+    @staticmethod
+    def preview_data_quality(df: pd.DataFrame) -> None:
+        """Визуализация качества данных"""
+        if df is None or df.empty:
+            return
+        
+        st.subheader("📊 Анализ качества данных")
+        
+        # Основные метрики
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Всего строк", len(df))
+        
+        with col2:
+            st.metric("Всего колонок", len(df.columns))
+        
+        with col3:
+            non_empty = df.astype(bool).sum().sum()
+            total_cells = len(df) * len(df.columns)
+            fill_rate = (non_empty / total_cells * 100) if total_cells > 0 else 0
+            st.metric("Заполненность", f"{fill_rate:.1f}%")
+        
+        with col4:
+            duplicates = len(df) - len(df.drop_duplicates())
+            st.metric("Дубликаты", duplicates)
+        
+        # Детальный анализ
+        with st.expander("🔍 Детальный анализ колонок"):
+            column_info = []
+            
+            for col in df.columns:
+                col_data = df[col].dropna()
+                
+                info = {
+                    'Колонка': col,
+                    'Тип данных': str(df[col].dtype),
+                    'Не пустых': len(col_data),
+                    'Уникальных': col_data.nunique(),
+                    'Заполненность': f"{(len(col_data) / len(df) * 100):.1f}%",
+                    'Примеры': ', '.join(str(x) for x in col_data.head(3).tolist() if x) or 'Нет данных'
+                }
+                column_info.append(info)
+            
+            column_df = pd.DataFrame(column_info)
+            st.dataframe(column_df, use_container_width=True)
+        
+        # Поиск проблем
+        with st.expander("⚠️ Выявленные проблемы"):
+            problems = []
+            
+            # Проверка на пустые колонки
+            for col in df.columns:
+                if df[col].isna().all() or (df[col].astype(str).str.strip() == '').all():
+                    problems.append(f"Колонка '{col}' полностью пустая")
+            
+            # Проверка на дубликаты в ключевых колонках
+            for col in df.columns:
+                if any(keyword in str(col).lower() for keyword in ['id', 'sku', 'артикул', 'код']):
+                    if df[col].duplicated().any():
+                        problems.append(f"Колонка '{col}' содержит дубликаты")
+            
+            if problems:
+                for problem in problems:
+                    st.warning(problem)
+            else:
+                st.success("Критических проблем не обнаружено")
+    
+    @staticmethod
+    def filter_invalid_urls(df: pd.DataFrame, url_column: str) -> pd.DataFrame:
+        """Фильтрация строк с невалидными URL"""
+        if df is None or url_column not in df.columns:
+            return df
+        
+        initial_len = len(df)
+        
+        # Копируем DataFrame
+        df_filtered = df.copy()
+        
+        # Функция проверки URL
+        def is_valid_url(url):
+            if pd.isna(url) or not isinstance(url, str):
+                return False
+            
+            url_str = url.strip()
+            
+            # Минимальная длина
+            if len(url_str) < 10:
+                return False
+            
+            # Проверяем расширения файлов
+            valid_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff']
+            has_extension = any(url_str.lower().endswith(ext) for ext in valid_extensions)
+            
+            # Проверяем наличие протокола или стандартных паттернов
+            has_protocol = url_str.startswith(('http://', 'https://', '//', 'www.'))
+            
+            # Проверяем на наличие домена
+            has_domain = '.' in url_str and len(url_str.split('.')[-1]) >= 2
+            
+            return (has_extension or has_protocol) and has_domain
+        
+        # Фильтруем строки
+        mask = df_filtered[url_column].apply(is_valid_url)
+        df_filtered = df_filtered[mask].copy()
+        
+        removed_count = initial_len - len(df_filtered)
+        
+        if removed_count > 0:
+            logger.info(f"Удалено {removed_count} строк с невалидными URL")
+            st.warning(f"⚠️ Удалено {removed_count} строк с невалидными URL")
+        
+        return df_filtered
+    
+    @staticmethod
+    def split_large_dataset(df: pd.DataFrame, max_rows: int = 1000) -> List[pd.DataFrame]:
+        """Разделение больших наборов данных на части"""
+        if len(df) <= max_rows:
+            return [df]
+        
+        chunks = []
+        total_chunks = (len(df) + max_rows - 1) // max_rows
+        
+        for i in range(total_chunks):
+            start_idx = i * max_rows
+            end_idx = min((i + 1) * max_rows, len(df))
+            chunk = df.iloc[start_idx:end_idx].copy()
+            chunks.append(chunk)
+        
+        logger.info(f"Набор данных разделен на {len(chunks)} частей по {max_rows} строк")
+        st.info(f"📁 Данные разделены на {len(chunks)} файлов по {max_rows} строк")
+        
+        return chunks
+
+# ============================
 # УТИЛИТЫ ДЛЯ РАБОТЫ С ИЗОБРАЖЕНИЯМИ И ШРИФТАМИ
 # ============================
 class FontManager:
@@ -862,83 +1386,175 @@ class ImageProcessor:
     
     @staticmethod
     def create_template_canvas(width: int, height: int, template_id: str = "modern_shop") -> Image.Image:
-        """Создание холста шаблона с фонами"""
-        template = DynamicTemplateManager.load_template(template_id)
-        layout = template.get("layout", {})
-        
-        # Гарантируем наличие background_settings
-        if not hasattr(st.session_state, 'background_settings'):
-            st.session_state.background_settings = {
-                'header_background': 'gradient_blue',
-                'footer_background': 'gradient_dark',
-                'main_background': 'white',
-                'header_height': 15,
-                'footer_height': 10,
-                'corner_radius': 20,
-                'shadow_enabled': True,
-                'border_enabled': True,
-                'border_color': '#e0e0e0',
-                'border_width': 2
-            }
-        
-        background_settings = st.session_state.background_settings
-        header_height_percent = background_settings.get('header_height', 15)
-        footer_height_percent = background_settings.get('footer_height', 10)
-        
-        header_height = int(height * header_height_percent / 100)
-        footer_height = int(height * footer_height_percent / 100)
-        main_height = height - header_height - footer_height
-        
-        # Ограничиваем размеры, чтобы не выходили за границы
-        header_height = max(0, min(header_height, height))
-        footer_height = max(0, min(footer_height, height - header_height))
-        main_height = max(0, height - header_height - footer_height)
-        
-        # Создаем основной холст
-        canvas = Image.new('RGBA', (width, height), (255, 255, 255, 0))
-        
-        # Создаем фоны для разных секций
-        header_bg_key = background_settings.get('header_background', 'gradient_blue')
-        footer_bg_key = background_settings.get('footer_background', 'gradient_dark')
-        main_bg_key = background_settings.get('main_background', 'white')
-        
-        # Получаем конфигурации фонов
-        header_bgs = BackgroundLibrary.get_header_backgrounds()
-        footer_bgs = BackgroundLibrary.get_footer_backgrounds()
-        main_bgs = BackgroundLibrary.get_main_backgrounds()
-        
-        # Создаем фоны
-        if header_height > 0 and header_bg_key in header_bgs:
-            header_bg = BackgroundLibrary.create_background(width, header_height, header_bgs[header_bg_key])
-            canvas.paste(header_bg, (0, 0))
-        
-        if main_height > 0 and main_bg_key in main_bgs:
-            main_bg = BackgroundLibrary.create_background(width, main_height, main_bgs[main_bg_key])
-            canvas.paste(main_bg, (0, header_height))
-        
-        if footer_height > 0 and footer_bg_key in footer_bgs:
-            footer_bg = BackgroundLibrary.create_background(width, footer_height, footer_bgs[footer_bg_key])
-            canvas.paste(footer_bg, (0, header_height + main_height))
-        
-        # Добавляем скругленные углы если нужно
-        corner_radius = background_settings.get('corner_radius', 20)
-        if corner_radius > 0:
-            # Ограничиваем радиус, чтобы не превышал половину меньшей стороны
-            min_side = min(width, height)
-            radius = min(corner_radius, min_side // 2)
-            canvas = ImageProcessor.add_rounded_corners(canvas, radius)
-        
-        # Добавляем тень если нужно
-        if background_settings.get('shadow_enabled', True):
-            canvas = ImageProcessor.add_shadow_effect(canvas)
-        
-        # Добавляем рамку если нужно (внутри границ)
-        if background_settings.get('border_enabled', True):
-            border_color = background_settings.get('border_color', '#e0e0e0')
-            border_width = background_settings.get('border_width', 2)
-            canvas = ImageProcessor.add_border(canvas, border_color, border_width)
-        
-        return canvas
+        """Создание холста шаблона с фонами - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+        try:
+            template = DynamicTemplateManager.load_template(template_id)
+            layout = template.get("layout", {})
+            
+            # Гарантируем наличие background_settings
+            if not hasattr(st.session_state, 'background_settings'):
+                st.session_state.background_settings = {
+                    'header_background': 'gradient_blue',
+                    'footer_background': 'gradient_dark',
+                    'main_background': 'white',
+                    'header_height': 15,
+                    'footer_height': 10,
+                    'corner_radius': 20,
+                    'shadow_enabled': True,
+                    'border_enabled': True,
+                    'border_color': '#e0e0e0',
+                    'border_width': 2
+                }
+            
+            background_settings = st.session_state.background_settings
+            
+            # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем, что шаблон не выходит за границы ===
+            # Вычисляем высоты секций в пикселях
+            header_height_percent = max(0, min(background_settings.get('header_height', 15), 100))
+            footer_height_percent = max(0, min(background_settings.get('footer_height', 10), 100 - header_height_percent))
+            
+            # Преобразуем проценты в пиксели
+            header_height = int(height * header_height_percent / 100)
+            footer_height = int(height * footer_height_percent / 100)
+            main_height = height - header_height - footer_height
+            
+            # Гарантируем, что main_height не отрицательный
+            if main_height < 0:
+                main_height = 0
+                header_height = int(height * 0.7)  # Перераспределяем
+                footer_height = height - header_height
+            
+            # Создаем основной холст с прозрачным фоном
+            canvas = Image.new('RGBA', (width, height), (255, 255, 255, 0))
+            
+            # Создаем фоны для разных секций
+            header_bg_key = background_settings.get('header_background', 'gradient_blue')
+            footer_bg_key = background_settings.get('footer_background', 'gradient_dark')
+            main_bg_key = background_settings.get('main_background', 'white')
+            
+            # Получаем конфигурации фонов
+            header_bgs = BackgroundLibrary.get_header_backgrounds()
+            footer_bgs = BackgroundLibrary.get_footer_backgrounds()
+            main_bgs = BackgroundLibrary.get_main_backgrounds()
+            
+            # Создаем и вставляем фоны с учетом границ
+            if header_height > 0 and header_bg_key in header_bgs:
+                try:
+                    header_bg = BackgroundLibrary.create_background(width, header_height, header_bgs[header_bg_key])
+                    # Ограничиваем позицию вставки
+                    canvas.paste(header_bg, (0, 0))
+                except Exception as e:
+                    logger.error(f"Ошибка создания фона шапки: {e}")
+                    # Создаем простой фон в случае ошибки
+                    header_bg = Image.new('RGB', (width, header_height), (30, 144, 255))
+                    canvas.paste(header_bg, (0, 0))
+            
+            if main_height > 0 and main_bg_key in main_bgs:
+                try:
+                    main_bg = BackgroundLibrary.create_background(width, main_height, main_bgs[main_bg_key])
+                    # Ограничиваем позицию вставки
+                    canvas.paste(main_bg, (0, header_height))
+                except Exception as e:
+                    logger.error(f"Ошибка создания основного фона: {e}")
+                    # Создаем простой фон в случае ошибки
+                    main_bg = Image.new('RGB', (width, main_height), (255, 255, 255))
+                    canvas.paste(main_bg, (0, header_height))
+            
+            if footer_height > 0 and footer_bg_key in footer_bgs:
+                try:
+                    footer_bg = BackgroundLibrary.create_background(width, footer_height, footer_bgs[footer_bg_key])
+                    # Вычисляем позицию с учетом границ
+                    footer_y = header_height + main_height
+                    if footer_y + footer_height > height:
+                        footer_y = height - footer_height  # Корректируем позицию
+                    canvas.paste(footer_bg, (0, footer_y))
+                except Exception as e:
+                    logger.error(f"Ошибка создания фона футера: {e}")
+                    # Создаем простой фон в случае ошибки
+                    footer_bg = Image.new('RGB', (width, footer_height), (33, 37, 41))
+                    footer_y = header_height + main_height
+                    if footer_y + footer_height > height:
+                        footer_y = height - footer_height
+                    canvas.paste(footer_bg, (0, footer_y))
+            
+            # Добавляем скругленные углы если нужно
+            corner_radius = background_settings.get('corner_radius', 20)
+            if corner_radius > 0:
+                # Ограничиваем радиус, чтобы не превышал половину меньшей стороны
+                min_side = min(width, height)
+                radius = min(corner_radius, min_side // 2)
+                try:
+                    canvas = ImageProcessor.add_rounded_corners(canvas, radius)
+                except Exception as e:
+                    logger.error(f"Ошибка добавления скругленных углов: {e}")
+            
+            # Добавляем тень если нужно (создаем новое изображение с тенью)
+            if background_settings.get('shadow_enabled', True):
+                try:
+                    canvas = ImageProcessor.add_shadow_effect(canvas)
+                except Exception as e:
+                    logger.error(f"Ошибка добавления тени: {e}")
+            
+            # Добавляем рамку если нужно (внутри границ)
+            if background_settings.get('border_enabled', True):
+                try:
+                    border_color = background_settings.get('border_color', '#e0e0e0')
+                    border_width = background_settings.get('border_width', 2)
+                    canvas = ImageProcessor.add_border(canvas, border_color, border_width)
+                except Exception as e:
+                    logger.error(f"Ошибка добавления рамки: {e}")
+            
+            logger.debug(f"Создан шаблон: {width}x{height}, шапка: {header_height}, основной: {main_height}, футер: {footer_height}")
+            return canvas
+            
+        except Exception as e:
+            logger.error(f"Критическая ошибка создания шаблона: {e}")
+            # Возвращаем простой белый холст в случае ошибки
+            return Image.new('RGBA', (width, height), (255, 255, 255, 255))
+    
+    @staticmethod
+    def get_template_content_area(canvas: Image.Image) -> Tuple[int, int, int, int]:
+        """Определяет область содержимого в шаблоне (где можно разместить изображение)"""
+        try:
+            if canvas.mode != 'RGBA':
+                canvas = canvas.convert('RGBA')
+            
+            # Получаем альфа-канал
+            alpha = canvas.getchannel('A')
+            
+            # Находим все непрозрачные пиксели
+            opaque_pixels = []
+            for y in range(canvas.height):
+                for x in range(canvas.width):
+                    if alpha.getpixel((x, y)) > 0:
+                        opaque_pixels.append((x, y))
+            
+            if not opaque_pixels:
+                # Если нет непрозрачных пикселей, возвращаем весь холст
+                return 0, 0, canvas.width, canvas.height
+            
+            # Находим границы
+            x_coords = [p[0] for p in opaque_pixels]
+            y_coords = [p[1] for p in opaque_pixels]
+            
+            x1 = min(x_coords)
+            y1 = min(y_coords)
+            x2 = max(x_coords)
+            y2 = max(y_coords)
+            
+            # Добавляем отступы от краев
+            padding = 10
+            x1 = max(0, x1 - padding)
+            y1 = max(0, y1 - padding)
+            x2 = min(canvas.width, x2 + padding)
+            y2 = min(canvas.height, y2 + padding)
+            
+            return x1, y1, x2, y2
+            
+        except Exception as e:
+            logger.error(f"Ошибка определения области содержимого: {e}")
+            # Возвращаем весь холст в случае ошибки
+            return 0, 0, canvas.width, canvas.height
     
     @staticmethod
     def add_rounded_corners(img: Image.Image, radius: int) -> Image.Image:
@@ -1020,7 +1636,7 @@ class ImageProcessor:
     
     @staticmethod
     def add_text_to_image(img: Image.Image, text_data: Dict, template_id: str = "modern_shop") -> Image.Image:
-        """Добавление текста на изображение по шаблону"""
+        """Добавление текста на изображение по шаблону - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
         try:
             template = DynamicTemplateManager.load_template(template_id)
             draw = ImageDraw.Draw(img)
@@ -1035,39 +1651,74 @@ class ImageProcessor:
             
             # Высота секций
             background_settings = safe_get_session_state('background_settings', {})
-            header_height = int(img.height * background_settings.get('header_height', 15) / 100)
-            footer_height = int(img.height * background_settings.get('footer_height', 10) / 100)
+            header_height_percent = max(0, min(background_settings.get('header_height', 15), 100))
+            footer_height_percent = max(0, min(background_settings.get('footer_height', 10), 100 - header_height_percent))
+            
+            header_height = int(img.height * header_height_percent / 100)
+            footer_height = int(img.height * footer_height_percent / 100)
             main_height = img.height - header_height - footer_height
+            
+            # Гарантируем корректные значения
+            if main_height < 0:
+                main_height = 0
+                header_height = int(img.height * 0.7)
+                footer_height = img.height - header_height
+            
+            # === ИСПРАВЛЕНИЕ: Определяем безопасную зону для текста ===
+            safe_margin = 20  # Отступ от краев
             
             # Добавляем каждый текстовый блок
             for position_key in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
                 if position_key in text_data and text_data[position_key]:
                     text = str(text_data[position_key])
+                    if not text.strip():
+                        continue  # Пропускаем пустой текст
                     
                     if position_key in text_positions:
                         position_config = text_positions[position_key]
                     else:
-                        # Значения по умолчанию
+                        # Значения по умолчанию с учетом безопасности
+                        if "top" in position_key:
+                            default_y = 0.15 if "left" in position_key or "right" in position_key else 0.2
+                        else:
+                            default_y = 0.85 if "left" in position_key or "right" in position_key else 0.8
+                        
                         position_config = {
-                            "x": 0.05 if "left" in position_key else 0.95,
-                            "y": 0.15 if "top" in position_key else 0.85,
-                            "align": "left" if "left" in position_key else "right",
+                            "x": 0.05 if "left" in position_key else (0.95 if "right" in position_key else 0.5),
+                            "y": default_y,
+                            "align": "left" if "left" in position_key else ("right" if "right" in position_key else "center"),
                             "max_width": 0.4,
                             "section": "main"
                         }
                     
                     # Позиция
-                    x = position_config.get("x", 0.5) * img.width
-                    y = position_config.get("y", 0.5)
+                    x_percent = position_config.get("x", 0.5)
+                    y_percent = position_config.get("y", 0.5)
                     
-                    # Определяем секцию
+                    # Ограничиваем проценты
+                    x_percent = max(0.0, min(1.0, x_percent))
+                    y_percent = max(0.0, min(1.0, y_percent))
+                    
+                    # Определяем секцию и вычисляем абсолютные координаты
                     section = position_config.get("section", "main")
+                    
                     if section == "header":
-                        y = y * header_height
+                        if header_height > 0:
+                            y = y_percent * header_height
+                        else:
+                            y = y_percent * img.height * 0.15  # Используем верхнюю часть
                     elif section == "footer":
-                        y = header_height + main_height + y * footer_height
+                        if footer_height > 0:
+                            y = header_height + main_height + y_percent * footer_height
+                        else:
+                            y = img.height - img.height * 0.15 * (1 - y_percent)  # Используем нижнюю часть
                     else:
-                        y = header_height + y * main_height
+                        if main_height > 0:
+                            y = header_height + y_percent * main_height
+                        else:
+                            y = y_percent * img.height  # Используем всю высоту
+                    
+                    x = x_percent * img.width
                     
                     # Применяем смещения
                     text_offset_settings = safe_get_session_state('text_offset_settings', {})
@@ -1076,18 +1727,26 @@ class ImageProcessor:
                         x += offset.get('x_offset', 0) * img.width / 100
                         y += offset.get('y_offset', 0) * img.height / 100
                     
-                    # Ограничиваем позицию в пределах изображения
-                    padding = 20
-                    x = max(padding, min(x, img.width - padding))
-                    y = max(padding, min(y, img.height - padding))
+                    # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем, что текст внутри границ ===
+                    # Определяем безопасные границы
+                    safe_left = safe_margin
+                    safe_right = img.width - safe_margin
+                    safe_top = safe_margin
+                    safe_bottom = img.height - safe_margin
+                    
+                    # Ограничиваем позицию безопасными границами
+                    x = max(safe_left, min(x, safe_right))
+                    y = max(safe_top, min(y, safe_bottom))
                     
                     # Размер шрифта
                     font_sizes = template.get("font_sizes", {})
                     base_size = font_sizes.get(position_key, 24)
                     font_size = int(base_size * font_size_multiplier)
                     
-                    # Ограничиваем размер шрифта
-                    font_size = max(8, min(font_size, min(img.width, img.height) // 10))
+                    # Динамический размер шрифта в зависимости от размера изображения
+                    min_font_size = 12
+                    max_font_size = min(img.width, img.height) // 10
+                    font_size = max(min_font_size, min(font_size, max_font_size))
                     
                     # Загружаем шрифт
                     font = FontManager.load_system_font(main_font_key, font_size)
@@ -1099,13 +1758,52 @@ class ImageProcessor:
                     # Выравнивание
                     align = position_config.get("align", "left")
                     
+                    # Проверяем, помещается ли текст
+                    try:
+                        # Получаем размеры текста
+                        if hasattr(draw, 'textbbox'):  # Для PIL 9.x.x+
+                            bbox = draw.textbbox((0, 0), text, font=font)
+                            text_width = bbox[2] - bbox[0]
+                            text_height = bbox[3] - bbox[1]
+                        else:  # Для PIL 8.x.x
+                            text_width, text_height = draw.textsize(text, font=font)
+                        
+                        # Проверяем, не выходит ли текст за границы
+                        if align == "center":
+                            half_width = text_width // 2
+                            if x - half_width < safe_left or x + half_width > safe_right:
+                                # Сдвигаем в безопасную зону
+                                x = max(safe_left + half_width, min(x, safe_right - half_width))
+                        elif align == "right":
+                            if x - text_width < safe_left:
+                                x = safe_left + text_width
+                            if x > safe_right:
+                                x = safe_right
+                        else:  # left
+                            if x + text_width > safe_right:
+                                x = safe_right - text_width
+                            if x < safe_left:
+                                x = safe_left
+                        
+                        # Проверяем по вертикали
+                        if y - text_height < safe_top:
+                            y = safe_top + text_height
+                        if y + text_height > safe_bottom:
+                            y = safe_bottom - text_height
+                        
+                    except Exception as e:
+                        logger.warning(f"Ошибка проверки размера текста: {e}")
+                    
                     # Добавляем текст
-                    if align == "center":
-                        draw.text((x, y), text, font=font, fill=text_color, anchor="mm")
-                    elif align == "right":
-                        draw.text((x, y), text, font=font, fill=text_color, anchor="ra")
-                    else:
-                        draw.text((x, y), text, font=font, fill=text_color, anchor="la")
+                    try:
+                        if align == "center":
+                            draw.text((x, y), text, font=font, fill=text_color, anchor="mm")
+                        elif align == "right":
+                            draw.text((x, y), text, font=font, fill=text_color, anchor="rm")
+                        else:
+                            draw.text((x, y), text, font=font, fill=text_color, anchor="lm")
+                    except Exception as e:
+                        logger.error(f"Ошибка добавления текста '{text}': {e}")
             
             return img
             
@@ -1228,97 +1926,7 @@ class ImageProcessor:
             return False
 
 # ============================
-# УТИЛИТЫ ДЛЯ РАБОТЫ С EXCEL
-# ============================
-class ExcelProcessor:
-    """Класс для обработки Excel файлов"""
-    
-    @staticmethod
-    def read_excel_file(uploaded_file) -> Optional[pd.DataFrame]:
-        """Чтение Excel файла"""
-        try:
-            if uploaded_file.name.endswith('.xlsx'):
-                df = pd.read_excel(uploaded_file, engine='openpyxl')
-            elif uploaded_file.name.endswith('.xls'):
-                df = pd.read_excel(uploaded_file, engine='xlrd')
-            else:
-                st.error("Неподдерживаемый формат файла")
-                return None
-            
-            # Заменяем NaN на None
-            df = df.where(pd.notnull(df), None)
-            
-            logger.info(f"Файл загружен: {uploaded_file.name}, строк: {len(df)}")
-            return df
-            
-        except Exception as e:
-            st.error(f"Ошибка чтения файла: {str(e)}")
-            logger.error(f"Ошибка чтения Excel: {e}")
-            return None
-    
-    @staticmethod
-    def get_column_suggestions(df: pd.DataFrame) -> Dict:
-        """Автоподбор колонок"""
-        suggestions = {
-            'top_left': None,
-            'top_right': None,
-            'bottom_left': None,
-            'bottom_right': None,
-            'image_url': None,
-            'filename': None,
-            'overlay_image_url': None
-        }
-        
-        if df is None or df.empty:
-            return suggestions
-        
-        column_names = [str(col).lower() for col in df.columns]
-        
-        # Маппинг ключевых слов
-        keyword_map = {
-            'top_left': ['название', 'name', 'товар', 'product', 'title'],
-            'top_right': ['цена', 'price', 'стоимость', 'руб'],
-            'bottom_left': ['описание', 'description', 'характеристики', 'features'],
-            'bottom_right': ['скидка', 'discount', 'акция', 'sale'],
-            'image_url': ['url', 'ссылка', 'image', 'картинка', 'фото'],
-            'filename': ['артикул', 'sku', 'код', 'id', 'номер'],
-            'overlay_image_url': ['лого', 'logo', 'бренд', 'brand', 'watermark']
-        }
-        
-        for position, keywords in keyword_map.items():
-            for col, col_lower in zip(df.columns, column_names):
-                if any(keyword in col_lower for keyword in keywords):
-                    suggestions[position] = col
-                    break
-        
-        # Если не нашли подходящие колонки, используем первые
-        for position in suggestions:
-            if suggestions[position] is None and len(df.columns) > 0:
-                suggestions[position] = df.columns[0]
-        
-        return suggestions
-    
-    @staticmethod
-    def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-        """Оптимизация DataFrame"""
-        if df is None:
-            return df
-        
-        # Удаляем строки без URL изображений
-        column_mapping = safe_get_session_state('column_mapping', {})
-        if 'image_url' in column_mapping:
-            image_col = column_mapping['image_url']
-            if image_col and image_col in df.columns:
-                initial_len = len(df)
-                df = df[df[image_col].notna()].copy()
-                removed = initial_len - len(df)
-                if removed > 0:
-                    logger.info(f"Удалено {removed} строк без URL изображений")
-        
-        return df
-
-# ============================
-# ОСНОВНОЙ ПРОЦЕССОР С ИСПРАВЛЕННОЙ ПРОБЛЕМОЙ URL
+# ОСНОВНОЙ ПРОЦЕССОР С ПРАВИЛЬНЫМИ ГРАНИЦАМИ ШАБЛОНА
 # ============================
 class InfographicGenerator:
     """Основной класс для генерации инфографики"""
@@ -1326,26 +1934,81 @@ class InfographicGenerator:
     def __init__(self):
         self.image_processor = ImageProcessor()
     
+    @staticmethod
+    def validate_row_data(row: pd.Series, column_mapping: Dict) -> Dict:
+        """Валидация данных строки перед обработкой"""
+        validation = {
+            'is_valid': True,
+            'errors': [],
+            'warnings': []
+        }
+        
+        # Проверка URL изображения
+        if 'image_url' in column_mapping and column_mapping['image_url']:
+            url_col = column_mapping['image_url']
+            if url_col in row:
+                url = row[url_col]
+                if pd.isna(url) or not isinstance(url, str) or len(str(url).strip()) < 10:
+                    validation['is_valid'] = False
+                    validation['errors'].append(f"Невалидный URL: {url}")
+        
+        # Проверка обязательных полей
+        for position in ['top_left', 'filename']:
+            if position in column_mapping and column_mapping[position]:
+                col = column_mapping[position]
+                if col in row:
+                    value = row[col]
+                    if pd.isna(value) or (isinstance(value, str) and len(value.strip()) == 0):
+                        validation['warnings'].append(f"Пустое поле: {position} ({col})")
+        
+        return validation
+    
+    def process_single_row_with_validation(self, row: pd.Series, row_index: int) -> Dict:
+        """Обработка строки с предварительной валидацией"""
+        try:
+            # Валидация данных
+            column_mapping = safe_get_session_state('column_mapping', {})
+            validation = self.validate_row_data(row, column_mapping)
+            
+            if not validation['is_valid']:
+                return {
+                    'row_index': row_index,
+                    'status': 'error',
+                    'message': f"Валидация не пройдена: {', '.join(validation['errors'])}",
+                    'validation_warnings': validation['warnings']
+                }
+            
+            # Если есть предупреждения, логируем их
+            if validation['warnings']:
+                logger.warning(f"Строка {row_index}: {', '.join(validation['warnings'])}")
+            
+            # Продолжаем обычную обработку
+            return self.process_single_row(row, row_index)
+            
+        except Exception as e:
+            logger.error(f"Ошибка валидации строки {row_index}: {e}")
+            return {
+                'row_index': row_index,
+                'status': 'error',
+                'message': f"Ошибка валидации: {str(e)}"
+            }
+    
     def process_single_row(self, row: pd.Series, row_index: int) -> Dict:
-        """Обработка одной строки - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+        """Обработка одной строки - ИСПРАВЛЕННАЯ ВЕРСИЯ С ПРАВИЛЬНЫМИ ГРАНИЦАМИ"""
         try:
             # Гарантируем инициализацию всех необходимых атрибутов
             ensure_session_state_initialized()
             
             # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Преобразуем pd.Series в словарь для безопасности ===
-            # Это решает проблему потери данных при передаче между потоками
             row_dict = {}
             try:
-                # Пытаемся получить все значения через to_dict
                 if hasattr(row, 'to_dict'):
                     row_dict = row.to_dict()
                 else:
-                    # Альтернативный способ
                     for col in row.index:
                         row_dict[col] = row[col]
             except Exception as e:
                 logger.warning(f"Ошибка преобразования строки {row_index} в словарь: {e}")
-                # Используем оригинальную Series как fallback
                 row_dict = dict(row)
             
             # Получаем column_mapping безопасно
@@ -1360,7 +2023,7 @@ class InfographicGenerator:
                 url_column_name = column_mapping['image_url']
             
             if url_column_name and url_column_name in row_dict:
-                # Получаем значение из словаря (наиболее надежный способ)
+                # Получаем значение из словаря
                 url_value = row_dict.get(url_column_name)
                 
                 # Проверяем и очищаем значение
@@ -1373,8 +2036,8 @@ class InfographicGenerator:
                         is_valid_url = (
                             url_str.startswith('http://') or 
                             url_str.startswith('https://') or
-                            url_str.startswith('//') or  # Протокол-относительные URL
-                            url_str.startswith('www.') or  # URL без протокола
+                            url_str.startswith('//') or
+                            url_str.startswith('www.') or
                             '.' in url_str and any(ext in url_str.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif'])
                         )
                         
@@ -1387,24 +2050,15 @@ class InfographicGenerator:
                             else:
                                 image_url = url_str
             
-            # Если URL нет - возвращаем ошибку с деталями
+            # Если URL нет - возвращаем ошибку
             if not image_url:
-                error_details = {
-                    'row_index': row_index,
-                    'column': url_column_name,
-                    'value': row_dict.get(url_column_name, 'NOT FOUND') if url_column_name else 'NO COLUMN',
-                    'available_columns': list(row_dict.keys())
-                }
-                logger.warning(f"Нет URL изображения в строке {row_index}: {error_details}")
-                
                 return {
                     'row_index': row_index,
                     'status': 'error',
-                    'message': f'Нет URL изображения в колонке "{url_column_name}"',
-                    'debug_info': error_details
+                    'message': f'Нет URL изображения в колонке "{url_column_name}"'
                 }
             
-            # Получаем данные из строки (используем row_dict вместо прямого доступа к row)
+            # Получаем данные из строки
             text_data = {}
             for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
                 if position in column_mapping and column_mapping[position]:
@@ -1437,10 +2091,9 @@ class InfographicGenerator:
                 if col in row_dict and pd.notna(row_dict[col]):
                     filename_source = str(row_dict[col]).strip()
                     if filename_source:
-                        # Очищаем имя файла
                         filename = re.sub(r'[^\w\-_\. ]', '_', filename_source)
                         filename = re.sub(r'\s+', '_', filename)
-                        filename = filename[:50]  # Ограничиваем длину
+                        filename = filename[:50]
             
             # Получаем настройки обработки
             processing_settings = safe_get_session_state('processing_settings', {})
@@ -1471,21 +2124,69 @@ class InfographicGenerator:
                 target_size = export_settings.get('target_size', 1200)
                 main_img = self.image_processor.resize_image(main_img, target_size)
             
+            # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Правильное совмещение изображения и шаблона ===
             # Получаем текущий шаблон
             current_template = safe_get_session_state('current_template', 'modern_shop')
             
-            # Создаем холст шаблона
+            # Создаем холст шаблона ТОЧНОГО РАЗМЕРА изображения
             canvas = self.image_processor.create_template_canvas(
                 main_img.width, main_img.height, current_template
             )
             
             # Получаем настройки фона
             background_settings = safe_get_session_state('background_settings', {})
-            header_height = int(main_img.height * background_settings.get('header_height', 15) / 100)
+            header_height_percent = max(0, min(background_settings.get('header_height', 15), 100))
+            header_height = int(main_img.height * header_height_percent / 100)
             
-            # Вставляем основное изображение
+            # === ИСПРАВЛЕНИЕ: Вставляем изображение в ОСНОВНУЮ СЕКЦИЮ шаблона ===
+            # Вычисляем позицию для основного изображения
+            footer_height_percent = max(0, min(background_settings.get('footer_height', 10), 100 - header_height_percent))
+            footer_height = int(main_img.height * footer_height_percent / 100)
+            main_height = main_img.height - header_height - footer_height
+            
+            # Гарантируем, что основная секция существует
+            if main_height <= 0:
+                main_height = main_img.height - header_height
+                if main_height <= 0:
+                    main_height = main_img.height  # Если нет шапки/футера, используем всю высоту
+            
+            # Создаем финальное изображение
             final_img = canvas.copy()
-            final_img.paste(main_img, (0, header_height))
+            
+            # Масштабируем основное изображение, чтобы оно поместилось в основную секцию
+            if main_img.height > main_height:
+                # Если изображение выше основной секции, масштабируем по высоте
+                scale_ratio = main_height / main_img.height
+                new_width = int(main_img.width * scale_ratio)
+                new_height = main_height
+                main_img_resized = main_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            else:
+                main_img_resized = main_img
+            
+            # Центрируем изображение по горизонтали в основной секции
+            if main_img_resized.width < canvas.width:
+                x_offset = (canvas.width - main_img_resized.width) // 2
+            else:
+                # Если изображение шире холста, обрезаем или масштабируем
+                scale_ratio = canvas.width / main_img_resized.width
+                if scale_ratio < 1:
+                    new_width = canvas.width
+                    new_height = int(main_img_resized.height * scale_ratio)
+                    main_img_resized = main_img_resized.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    x_offset = 0
+                else:
+                    x_offset = 0
+            
+            # Вставляем изображение в основную секцию
+            y_offset = header_height
+            # Гарантируем, что не выходим за границы
+            if y_offset + main_img_resized.height > canvas.height:
+                y_offset = max(0, canvas.height - main_img_resized.height)
+            
+            if x_offset + main_img_resized.width > canvas.width:
+                x_offset = max(0, canvas.width - main_img_resized.width)
+            
+            final_img.paste(main_img_resized, (x_offset, y_offset))
             
             # Добавляем текст
             final_img = self.image_processor.add_text_to_image(
@@ -1584,7 +2285,7 @@ class InfographicGenerator:
                     }
                 
                 row = df.iloc[idx]
-                return self.process_single_row(row, idx)
+                return self.process_single_row_with_validation(row, idx)
             except Exception as e:
                 logger.error(f"Ошибка в process_wrapper для строки {idx}: {e}")
                 return {
@@ -1607,7 +2308,7 @@ class InfographicGenerator:
             
             for future in as_completed(futures):
                 try:
-                    timeout = processing_settings.get('timeout', 30) + 10  # Дополнительное время
+                    timeout = processing_settings.get('timeout', 30) + 10
                     result = future.result(timeout=timeout)
                     results.append(result)
                     completed += 1
@@ -1624,7 +2325,7 @@ class InfographicGenerator:
                         else:
                             stats['other_errors'] += 1
                         
-                        # Сохраняем сообщения об ошибках (первые 10)
+                        # Сохраняем сообщения об ошибках
                         if len(error_messages) < 10:
                             error_messages.append(f"Строка {result.get('row_index')}: {result.get('message')}")
                     
@@ -1700,52 +2401,79 @@ class UIComponents:
         with st.sidebar:
             st.title("⚙️ Настройки")
             
-            # Загрузка файла
+            # Улучшенная загрузка файла
             st.subheader("📁 Загрузка данных")
-            uploaded_file = st.file_uploader(
-                "Выберите Excel файл",
-                type=['xlsx', 'xls'],
-                key="file_uploader"
-            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                uploaded_file = st.file_uploader(
+                    "Выберите файл",
+                    type=['xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 'csv'],
+                    key="file_uploader",
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                if uploaded_file:
+                    file_type = uploaded_file.name.split('.')[-1].upper()
+                    st.info(f"📄 {file_type}")
             
             if uploaded_file:
-                # Гарантируем инициализацию session_state
                 ensure_session_state_initialized()
                 
                 if (st.session_state.uploaded_file_name != uploaded_file.name or
                     st.session_state.df is None):
                     
-                    with st.spinner("Загрузка файла..."):
-                        df = ExcelProcessor.read_excel_file(uploaded_file)
+                    with st.spinner(f"Загрузка {uploaded_file.name}..."):
+                        # Используем улучшенный процессор
+                        df = AdvancedExcelProcessor.read_excel_with_fallback(uploaded_file)
+                        
                         if df is not None:
                             st.session_state.df = df
                             st.session_state.uploaded_file_name = uploaded_file.name
                             
-                            # Автоподбор колонок
-                            suggestions = ExcelProcessor.get_column_suggestions(df)
-                            # Обновляем column_mapping
+                            # Валидация данных
+                            validation = AdvancedExcelProcessor.validate_dataframe(df)
+                            
+                            # Интеллектуальный подбор колонок
+                            suggestions = AdvancedExcelProcessor.get_intelligent_column_suggestions(df)
+                            
+                            # Обновляем column_mapping с учетом уверенности
                             for key in suggestions:
-                                st.session_state.column_mapping[key] = suggestions[key]
+                                if suggestions[key] and key != 'confidence':
+                                    st.session_state.column_mapping[key] = suggestions[key]
                             
-                            # Фильтрация строк без URL
-                            url_col = suggestions.get('image_url')
-                            if url_col and url_col in df.columns:
-                                initial_count = len(df)
-                                df = df[df[url_col].notna()].copy()
-                                df = df[~df[url_col].astype(str).str.strip().isin(['', 'nan', 'NaN', 'None'])]
-                                filtered_count = len(df)
-                                removed = initial_count - filtered_count
-                                
-                                if removed > 0:
-                                    st.info(f"⚠️ Удалено {removed} строк без корректных URL")
+                            # Показываем результаты валидации
+                            if validation['warnings']:
+                                with st.expander("⚠️ Предупреждения", expanded=True):
+                                    for warning in validation['warnings']:
+                                        st.warning(warning)
                             
-                            st.session_state.df = df
-                            st.success(f"✅ Загружено {len(df)} строк")
+                            # Статистика
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Строк", validation['total_rows'])
+                            with col2:
+                                st.metric("Колонок", validation['total_columns'])
+                            with col3:
+                                st.metric("URL колонок", len(validation['url_columns']))
+                            
+                            st.success(f"✅ Файл загружен успешно!")
+                            
+                            # Автофильтрация URL если есть подозрения
+                            if validation['warnings'] and any('URL' in warning for warning in validation['warnings']):
+                                if st.button("🚫 Автофильтрация невалидных URL", type="secondary"):
+                                    url_col = st.session_state.column_mapping['image_url']
+                                    if url_col:
+                                        df_filtered = AdvancedExcelProcessor.filter_invalid_urls(df, url_col)
+                                        st.session_state.df = df_filtered
+                                        st.success(f"Осталось {len(df_filtered)} строк после фильтрации")
+                                        st.rerun()
             
             # Предпросмотр данных
             if st.session_state.df is not None:
                 with st.expander("👁️ Предпросмотр данных"):
-                    preview_rows = st.slider("Строк", 5, 50, 10)
+                    preview_rows = st.slider("Строк", 5, 50, 10, key="preview_rows")
                     st.dataframe(st.session_state.df.head(preview_rows))
             
             # Шаблоны
@@ -1940,7 +2668,7 @@ class UIComponents:
             st.divider()
             processed_count = safe_get_session_state('processed_count', 0)
             st.caption(f"Обработано: {processed_count}")
-            st.caption("Версия: 7.0")
+            st.caption("Версия: 8.0")
     
     @staticmethod
     def render_column_mapping():
@@ -2017,10 +2745,11 @@ class UIComponents:
             )
         
         if st.button("🔍 Автоподбор", key="auto_map"):
-            suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
+            suggestions = AdvancedExcelProcessor.get_intelligent_column_suggestions(st.session_state.df)
             # Обновляем все ключи
             for key in suggestions:
-                st.session_state.column_mapping[key] = suggestions[key]
+                if key != 'confidence' and suggestions[key]:
+                    st.session_state.column_mapping[key] = suggestions[key]
             st.success("✅ Колонки подобраны!")
             st.rerun()
     
@@ -2217,6 +2946,42 @@ class UIComponents:
                 st.session_state.image_overlay_settings['y_offset'] = y_offset
     
     @staticmethod
+    def render_template_preview():
+        """Предпросмотр границ шаблона"""
+        st.subheader("📐 Предпросмотр границ шаблона")
+        
+        # Создаем тестовое изображение
+        test_width = 600
+        test_height = 400
+        
+        # Создаем шаблон
+        current_template = safe_get_session_state('current_template', 'modern_shop')
+        canvas = ImageProcessor.create_template_canvas(test_width, test_height, current_template)
+        
+        # Создаем изображение с границами
+        border_img = canvas.copy()
+        draw = ImageDraw.Draw(border_img)
+        
+        # Определяем область содержимого
+        content_area = ImageProcessor.get_template_content_area(canvas)
+        x1, y1, x2, y2 = content_area
+        
+        # Рисуем границы
+        draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0, 200), width=3)
+        
+        # Добавляем подписи
+        font = FontManager.load_system_font('system_arial', 14)
+        draw.text((10, 10), f"Шаблон: {current_template}", font=font, fill=(255, 255, 255, 255))
+        draw.text((10, 30), f"Границы: ({x1},{y1})-({x2},{y2})", font=font, fill=(255, 255, 255, 255))
+        draw.text((10, 50), f"Размер: {test_width}x{test_height}", font=font, fill=(255, 255, 255, 255))
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(canvas, caption="Шаблон без границ", use_column_width=True)
+        with col2:
+            st.image(border_img, caption="Шаблон с границами содержимого", use_column_width=True)
+    
+    @staticmethod
     def render_preview_tab(generator):
         """Вкладка предпросмотра"""
         if st.session_state.df is None:
@@ -2224,6 +2989,9 @@ class UIComponents:
             return
         
         st.header("🎯 Предпросмотр")
+        
+        # Предпросмотр границ шаблона
+        UIComponents.render_template_preview()
         
         # Настройки
         UIComponents.render_font_settings()
@@ -2299,10 +3067,34 @@ class UIComponents:
                             st.session_state.current_template
                         )
                         
-                        # Вставляем изображение
-                        header_height = int(img.height * st.session_state.background_settings['header_height'] / 100)
+                        # Получаем настройки фона
+                        background_settings = st.session_state.background_settings
+                        header_height = int(img.height * background_settings.get('header_height', 15) / 100)
+                        
+                        # Вставляем изображение в основную секцию
+                        footer_height = int(img.height * background_settings.get('footer_height', 10) / 100)
+                        main_height = img.height - header_height - footer_height
+                        
+                        if main_height <= 0:
+                            main_height = img.height - header_height
+                            if main_height <= 0:
+                                main_height = img.height
+                        
+                        # Масштабируем изображение для основной секции
+                        if img.height > main_height:
+                            scale_ratio = main_height / img.height
+                            new_width = int(img.width * scale_ratio)
+                            new_height = main_height
+                            img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        else:
+                            img_resized = img
+                        
+                        # Центрируем
+                        x_offset = (canvas.width - img_resized.width) // 2
+                        y_offset = header_height
+                        
                         final_img = canvas.copy()
-                        final_img.paste(img, (0, header_height))
+                        final_img.paste(img_resized, (x_offset, y_offset))
                         
                         # Добавляем текст
                         final_img = generator.image_processor.add_text_to_image(
@@ -2370,8 +3162,8 @@ class UIComponents:
         
         st.header("⚡ Массовая обработка")
         
-        # Оптимизируем данные
-        df_optimized = ExcelProcessor.optimize_dataframe(st.session_state.df)
+        # Используем улучшенный процессор для оптимизации данных
+        df_optimized = AdvancedExcelProcessor.clean_dataframe(st.session_state.df)
         total_rows = len(df_optimized)
         
         if total_rows == 0:
@@ -2648,6 +3440,104 @@ class UIComponents:
                                 
                         except Exception as e:
                             st.error(f"Ошибка создания превью: {e}")
+    
+    @staticmethod
+    def render_data_quality_tab():
+        """Вкладка анализа качества данных"""
+        if st.session_state.df is None:
+            st.info("📥 Загрузите Excel файл для анализа")
+            return
+        
+        st.header("📊 Анализ качества данных")
+        
+        # Используем улучшенный процессор
+        df = st.session_state.df
+        
+        # Показываем анализ качества
+        AdvancedExcelProcessor.preview_data_quality(df)
+        
+        # Фильтрация данных
+        st.subheader("🔍 Фильтрация данных")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🚫 Удалить строки без URL", use_container_width=True):
+                if 'image_url' in st.session_state.column_mapping:
+                    url_col = st.session_state.column_mapping['image_url']
+                    if url_col and url_col in df.columns:
+                        initial_len = len(df)
+                        df_filtered = AdvancedExcelProcessor.filter_invalid_urls(df, url_col)
+                        st.session_state.df = df_filtered
+                        removed = initial_len - len(df_filtered)
+                        if removed > 0:
+                            st.success(f"✅ Удалено {removed} строк без валидных URL")
+                        else:
+                            st.info("Не найдено строк с невалидными URL")
+                        st.rerun()
+        
+        with col2:
+            if st.button("🧹 Автоочистка данных", use_container_width=True):
+                df_cleaned = AdvancedExcelProcessor.clean_dataframe(df)
+                st.session_state.df = df_cleaned
+                st.success("✅ Данные очищены")
+                st.rerun()
+        
+        # Экспорт исправленных данных
+        st.subheader("💾 Экспорт данных")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📥 Скачать исправленные данные", use_container_width=True):
+                # Создаем временный Excel файл
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    st.session_state.df.to_excel(writer, index=False, sheet_name='Data')
+                
+                output.seek(0)
+                
+                st.download_button(
+                    label="⬇️ Скачать Excel",
+                    data=output.getvalue(),
+                    file_name=f"cleaned_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        
+        with col2:
+            # Экспорт проблемных строк
+            if st.button("📋 Экспорт проблемных строк", use_container_width=True):
+                if 'image_url' in st.session_state.column_mapping:
+                    url_col = st.session_state.column_mapping['image_url']
+                    if url_col and url_col in df.columns:
+                        # Находим строки без валидных URL
+                        def is_invalid_url(url):
+                            if pd.isna(url) or not isinstance(url, str):
+                                return True
+                            url_str = url.strip()
+                            return len(url_str) < 10 or not any(ext in url_str.lower() 
+                                                             for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif'])
+                        
+                        invalid_mask = df[url_col].apply(is_invalid_url)
+                        invalid_df = df[invalid_mask].copy()
+                        
+                        if not invalid_df.empty:
+                            output = BytesIO()
+                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                                invalid_df.to_excel(writer, index=False, sheet_name='Invalid_URLs')
+                            
+                            output.seek(0)
+                            
+                            st.download_button(
+                                label="⬇️ Скачать проблемные строки",
+                                data=output.getvalue(),
+                                file_name=f"invalid_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True
+                            )
+                        else:
+                            st.info("Нет проблемных строк")
 
 # ============================
 # ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
@@ -2689,14 +3579,15 @@ def show_main_interface():
     ensure_session_state_initialized()
     
     # Заголовок
-    st.title("🚀 Генератор Инфографики PRO v7.0")
+    st.title("🚀 Генератор Инфографики PRO v8.0")
     st.markdown("---")
     
     # Создаем табы
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Анализ данных",
         "🎯 Предпросмотр",
         "⚡ Обработка",
-        "📊 Статистика",
+        "📈 Статистика",
         "🎨 Шаблоны"
     ])
     
@@ -2708,15 +3599,18 @@ def show_main_interface():
     
     # Содержимое табов
     with tab1:
-        UIComponents.render_preview_tab(generator)
+        UIComponents.render_data_quality_tab()
     
     with tab2:
-        UIComponents.render_processing_tab(generator)
+        UIComponents.render_preview_tab(generator)
     
     with tab3:
-        UIComponents.render_statistics_tab()
+        UIComponents.render_processing_tab(generator)
     
     with tab4:
+        UIComponents.render_statistics_tab()
+    
+    with tab5:
         UIComponents.render_templates_tab()
 
 def main():
