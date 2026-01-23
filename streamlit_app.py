@@ -65,15 +65,7 @@ def init_session_state():
             'end_time': None
         },
         'current_template': 'modern_shop',
-        'column_mapping': {
-            'top_left': None,
-            'top_right': None,
-            'bottom_left': None,
-            'bottom_right': None,
-            'image_url': None,
-            'filename': None,
-            'overlay_image_url': None
-        },
+        'column_mapping': {},
         'output_dir': 'output_infographics',
         'batch_results': [],
         'image_cache': {},
@@ -164,6 +156,18 @@ def init_session_state():
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+    
+    # Инициализация column_mapping если он пустой
+    if not st.session_state.column_mapping:
+        st.session_state.column_mapping = {
+            'top_left': None,
+            'top_right': None,
+            'bottom_left': None,
+            'bottom_right': None,
+            'image_url': None,
+            'filename': None,
+            'overlay_image_url': None
+        }
 
 # ============================
 # БИБЛИОТЕКА ФОНОВ И ГРАДИЕНТОВ
@@ -1024,9 +1028,6 @@ class ImageProcessor:
                     # Выравнивание
                     align = position_config.get("align", "left")
                     
-                    # Максимальная ширина текста
-                    max_width_px = position_config.get("max_width", 0.4) * img.width
-                    
                     # Добавляем текст
                     if align == "center":
                         draw.text((x, y), text, font=font, fill=text_color, anchor="mm")
@@ -1235,7 +1236,7 @@ class ExcelProcessor:
         # Удаляем строки без URL изображений
         if 'image_url' in st.session_state.column_mapping:
             image_col = st.session_state.column_mapping['image_url']
-            if image_col in df.columns:
+            if image_col and image_col in df.columns:
                 initial_len = len(df)
                 df = df[df[image_col].notna()].copy()
                 removed = initial_len - len(df)
@@ -1256,14 +1257,26 @@ class InfographicGenerator:
     def process_single_row(self, row: pd.Series, row_index: int) -> Dict:
         """Обработка одной строки"""
         try:
-            # Получаем данные из строки
-            text_data = {}
+            # Проверяем и инициализируем column_mapping если нужно
+            if not hasattr(st.session_state, 'column_mapping') or not st.session_state.column_mapping:
+                st.session_state.column_mapping = {
+                    'top_left': None,
+                    'top_right': None,
+                    'bottom_left': None,
+                    'bottom_right': None,
+                    'image_url': None,
+                    'filename': None,
+                    'overlay_image_url': None
+                }
+            
             column_mapping = st.session_state.column_mapping
             
+            # Получаем данные из строки
+            text_data = {}
             for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
-                if position in column_mapping:
+                if position in column_mapping and column_mapping[position]:
                     col = column_mapping[position]
-                    if col and col in row:
+                    if col in row:
                         text_data[position] = str(row[col] or '')
                     else:
                         text_data[position] = ''
@@ -1272,9 +1285,9 @@ class InfographicGenerator:
             
             # URL основного изображения
             image_url = ''
-            if 'image_url' in column_mapping:
+            if 'image_url' in column_mapping and column_mapping['image_url']:
                 col = column_mapping['image_url']
-                if col and col in row:
+                if col in row:
                     image_url = str(row[col] or '')
             
             if not image_url:
@@ -1286,18 +1299,19 @@ class InfographicGenerator:
             
             # URL изображения для наложения
             overlay_url = None
-            if 'overlay_image_url' in column_mapping:
+            if ('overlay_image_url' in column_mapping and 
+                column_mapping['overlay_image_url']):
                 col = column_mapping['overlay_image_url']
-                if col and col in row:
+                if col in row:
                     overlay_url = str(row[col] or '')
                     if overlay_url.lower() in ['', 'nan', 'none']:
                         overlay_url = None
             
             # Имя файла
             filename = f"item_{row_index:04d}"
-            if 'filename' in column_mapping:
+            if 'filename' in column_mapping and column_mapping['filename']:
                 col = column_mapping['filename']
-                if col and col in row:
+                if col in row:
                     filename_source = str(row[col] or '')
                     if filename_source and filename_source.lower() not in ['', 'nan', 'none']:
                         # Очищаем имя файла
@@ -1501,7 +1515,12 @@ class UIComponents:
                             
                             # Автоподбор колонок
                             suggestions = ExcelProcessor.get_column_suggestions(df)
-                            st.session_state.column_mapping.update(suggestions)
+                            # Инициализируем column_mapping если он пустой
+                            if not st.session_state.column_mapping:
+                                st.session_state.column_mapping = {}
+                            # Обновляем только существующие ключи
+                            for key in suggestions:
+                                st.session_state.column_mapping[key] = suggestions[key]
                             
                             st.success(f"✅ Загружено {len(df)} строк")
             
@@ -1780,6 +1799,10 @@ class UIComponents:
         
         if st.button("🔍 Автоподбор", key="auto_map"):
             suggestions = ExcelProcessor.get_column_suggestions(st.session_state.df)
+            # Инициализируем column_mapping если он пустой
+            if not st.session_state.column_mapping:
+                st.session_state.column_mapping = {}
+            # Обновляем все ключи
             st.session_state.column_mapping.update(suggestions)
             st.success("✅ Колонки подобраны!")
             st.rerun()
@@ -2014,23 +2037,24 @@ class UIComponents:
                 # Получаем данные
                 text_data = {}
                 for position in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
-                    if position in st.session_state.column_mapping:
+                    if position in st.session_state.column_mapping and st.session_state.column_mapping[position]:
                         col = st.session_state.column_mapping[position]
-                        if col and col in row:
+                        if col in row:
                             text_data[position] = str(row[col] or '')
                 
                 # URL изображений
                 image_url = ''
-                if 'image_url' in st.session_state.column_mapping:
+                if 'image_url' in st.session_state.column_mapping and st.session_state.column_mapping['image_url']:
                     col = st.session_state.column_mapping['image_url']
-                    if col and col in row:
+                    if col in row:
                         image_url = str(row[col] or '')
                 
                 overlay_url = None
                 if ('overlay_image_url' in st.session_state.column_mapping and
+                    st.session_state.column_mapping.get('overlay_image_url') and
                     st.session_state.image_overlay_settings.get('enabled', False)):
                     col = st.session_state.column_mapping['overlay_image_url']
-                    if col and col in row:
+                    if col in row:
                         overlay_url = str(row[col] or '')
                         if overlay_url.lower() in ['', 'nan', 'none']:
                             overlay_url = None
