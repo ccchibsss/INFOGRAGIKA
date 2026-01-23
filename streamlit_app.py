@@ -1584,22 +1584,37 @@ class ImageProcessor:
     
     @staticmethod
     def add_shadow_effect(img: Image.Image, shadow_size: int = 10) -> Image.Image:
-        """Добавление эффекта тени"""
-        width, height = img.size
+        """Добавление эффекта тени - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
         
-        # Ограничиваем размер тени
-        shadow_size = min(shadow_size, min(width, height) // 10)
+        # Уменьшаем размер тени для лучшего вида
+        shadow_size = min(shadow_size, 15)
         
-        # Создаем изображение с тенью
-        shadow = Image.new('RGBA', (width + shadow_size * 2, height + shadow_size * 2), (0, 0, 0, 0))
+        # Создаем изображение для тени с прозрачным фоном
+        shadow_width = img.width + shadow_size * 2
+        shadow_height = img.height + shadow_size * 2
+        shadow = Image.new('RGBA', (shadow_width, shadow_height), (0, 0, 0, 0))
         
-        # Добавляем саму картинку
-        shadow.paste(img, (shadow_size, shadow_size), img)
+        # Создаем черную тень (альфа канал для размытия)
+        shadow_base = Image.new('RGBA', (img.width, img.height), (0, 0, 0, 80))
         
-        # Добавляем размытие для тени
+        # Вставляем тень со смещением (центрируем)
+        shadow.paste(shadow_base, (shadow_size, shadow_size))
+        
+        # Применяем размытие - ВАЖНО: размываем всё изображение тени
         shadow = shadow.filter(ImageFilter.GaussianBlur(radius=shadow_size/2))
         
-        return shadow
+        # Создаем финальное изображение с тенью
+        final_img = Image.new('RGBA', (shadow_width, shadow_height), (255, 255, 255, 0))
+        
+        # Вставляем тень
+        final_img.paste(shadow, (0, 0), shadow)
+        
+        # Вставляем оригинальное изображение поверх тени - ЦЕНТРИРУЕМ
+        final_img.paste(img, (shadow_size, shadow_size), img)
+        
+        return final_img
     
     @staticmethod
     def add_border(img: Image.Image, border_color: str, border_width: int = 2) -> Image.Image:
@@ -1638,6 +1653,7 @@ class ImageProcessor:
     def add_text_to_image(img: Image.Image, text_data: Dict, template_id: str = "modern_shop") -> Image.Image:
         """Добавление текста на изображение по шаблону - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
         try:
+            # Загружаем шаблон
             template = DynamicTemplateManager.load_template(template_id)
             draw = ImageDraw.Draw(img)
             
@@ -1649,166 +1665,228 @@ class ImageProcessor:
             # Позиции текста из шаблона
             text_positions = template.get("text_positions", {})
             
-            # Высота секций
+            # Высота секций в процентах
             background_settings = safe_get_session_state('background_settings', {})
             header_height_percent = max(0, min(background_settings.get('header_height', 15), 100))
             footer_height_percent = max(0, min(background_settings.get('footer_height', 10), 100 - header_height_percent))
             
+            # Преобразуем проценты в пиксели
             header_height = int(img.height * header_height_percent / 100)
             footer_height = int(img.height * footer_height_percent / 100)
             main_height = img.height - header_height - footer_height
             
-            # Гарантируем корректные значения
+            # Гарантируем положительные значения
             if main_height < 0:
-                main_height = 0
-                header_height = int(img.height * 0.7)
-                footer_height = img.height - header_height
+                main_height = img.height - header_height
+                footer_height = 0
             
-            # === ИСПРАВЛЕНИЕ: Определяем безопасную зону для текста ===
-            safe_margin = 20  # Отступ от краев
+            # === ИСПРАВЛЕНИЕ: Определяем безопасные границы для каждой секции ===
+            safe_margin = 10  # Минимальный отступ от краев
             
-            # Добавляем каждый текстовый блок
+            # Границы для шапки
+            header_safe_top = safe_margin
+            header_safe_bottom = header_height - safe_margin
+            
+            # Границы для основной секции
+            main_safe_top = header_height + safe_margin
+            main_safe_bottom = header_height + main_height - safe_margin
+            
+            # Границы для футера
+            footer_safe_top = header_height + main_height + safe_margin
+            footer_safe_bottom = img.height - safe_margin
+            
+            # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем добавление текста по краям ===
+            # Сначала определяем какие позиции текста заполнены
+            filled_positions = []
             for position_key in ['top_left', 'top_right', 'bottom_left', 'bottom_right']:
                 if position_key in text_data and text_data[position_key]:
-                    text = str(text_data[position_key])
-                    if not text.strip():
-                        continue  # Пропускаем пустой текст
-                    
-                    if position_key in text_positions:
-                        position_config = text_positions[position_key]
+                    text = str(text_data[position_key]).strip()
+                    if text and text.lower() not in ['nan', 'none', 'null', '']:
+                        filled_positions.append(position_key)
+            
+            if not filled_positions:
+                return img  # Нет текста для добавления
+            
+            # Добавляем каждый текстовый блок
+            for position_key in filled_positions:
+                text = str(text_data[position_key]).strip()
+                
+                # Получаем конфигурацию позиции или используем значения по умолчанию
+                if position_key in text_positions:
+                    position_config = text_positions[position_key]
+                else:
+                    # Значения по умолчанию с учетом безопасности
+                    if position_key == 'top_left':
+                        position_config = {"x": 0.05, "y": 0.15, "align": "left", "max_width": 0.4, "section": "main"}
+                    elif position_key == 'top_right':
+                        position_config = {"x": 0.95, "y": 0.15, "align": "right", "max_width": 0.4, "section": "main"}
+                    elif position_key == 'bottom_left':
+                        position_config = {"x": 0.05, "y": 0.85, "align": "left", "max_width": 0.4, "section": "main"}
+                    elif position_key == 'bottom_right':
+                        position_config = {"x": 0.95, "y": 0.85, "align": "right", "max_width": 0.4, "section": "main"}
                     else:
-                        # Значения по умолчанию с учетом безопасности
-                        if "top" in position_key:
-                            default_y = 0.15 if "left" in position_key or "right" in position_key else 0.2
+                        position_config = {"x": 0.5, "y": 0.5, "align": "center", "max_width": 0.8, "section": "main"}
+                
+                # Определяем секцию
+                section = position_config.get("section", "main")
+                
+                # Коэффициенты позиции (0.0-1.0)
+                x_percent = max(0.0, min(1.0, position_config.get("x", 0.5)))
+                y_percent = max(0.0, min(1.0, position_config.get("y", 0.5)))
+                
+                # === ИСПРАВЛЕНИЕ: Правильное вычисление позиции для каждой секции ===
+                if section == "header":
+                    if header_height > 20:  # Только если шапка достаточно большая
+                        # Вычисляем позицию внутри шапки
+                        section_y_range = header_safe_bottom - header_safe_top
+                        if section_y_range > 0:
+                            y = header_safe_top + (y_percent * section_y_range)
                         else:
-                            default_y = 0.85 if "left" in position_key or "right" in position_key else 0.8
+                            y = header_safe_top
                         
-                        position_config = {
-                            "x": 0.05 if "left" in position_key else (0.95 if "right" in position_key else 0.5),
-                            "y": default_y,
-                            "align": "left" if "left" in position_key else ("right" if "right" in position_key else "center"),
-                            "max_width": 0.4,
-                            "section": "main"
-                        }
-                    
-                    # Позиция
-                    x_percent = position_config.get("x", 0.5)
-                    y_percent = position_config.get("y", 0.5)
-                    
-                    # Ограничиваем проценты
-                    x_percent = max(0.0, min(1.0, x_percent))
-                    y_percent = max(0.0, min(1.0, y_percent))
-                    
-                    # Определяем секцию и вычисляем абсолютные координаты
-                    section = position_config.get("section", "main")
-                    
-                    if section == "header":
-                        if header_height > 0:
-                            y = y_percent * header_height
-                        else:
-                            y = y_percent * img.height * 0.15  # Используем верхнюю часть
-                    elif section == "footer":
-                        if footer_height > 0:
-                            y = header_height + main_height + y_percent * footer_height
-                        else:
-                            y = img.height - img.height * 0.15 * (1 - y_percent)  # Используем нижнюю часть
+                        # Ограничиваем по вертикали в пределах шапки
+                        y = max(header_safe_top, min(y, header_safe_bottom))
                     else:
-                        if main_height > 0:
-                            y = header_height + y_percent * main_height
+                        # Если шапка маленькая, размещаем в верхней части основной секции
+                        y = main_safe_top + (y_percent * 0.3 * (main_safe_bottom - main_safe_top))
+                
+                elif section == "footer":
+                    if footer_height > 20:  # Только если футер достаточно большой
+                        # Вычисляем позицию внутри футера
+                        section_y_range = footer_safe_bottom - footer_safe_top
+                        if section_y_range > 0:
+                            y = footer_safe_top + (y_percent * section_y_range)
                         else:
-                            y = y_percent * img.height  # Используем всю высоту
+                            y = footer_safe_top
+                        
+                        # Ограничиваем по вертикали в пределах футера
+                        y = max(footer_safe_top, min(y, footer_safe_bottom))
+                    else:
+                        # Если футер маленький, размещаем в нижней части основной секции
+                        y = main_safe_bottom - ((1 - y_percent) * 0.3 * (main_safe_bottom - main_safe_top))
+                
+                else:  # section == "main" или по умолчанию
+                    # Вычисляем позицию внутри основной секции
+                    section_y_range = main_safe_bottom - main_safe_top
+                    if section_y_range > 0:
+                        y = main_safe_top + (y_percent * section_y_range)
+                    else:
+                        y = main_safe_top
                     
-                    x = x_percent * img.width
+                    # Ограничиваем по вертикали в пределах основной секции
+                    y = max(main_safe_top, min(y, main_safe_bottom))
+                
+                # Вычисляем горизонтальную позицию
+                x = x_percent * img.width
+                
+                # Применяем смещения из настроек
+                text_offset_settings = safe_get_session_state('text_offset_settings', {})
+                if position_key in text_offset_settings:
+                    offset = text_offset_settings[position_key]
+                    x += offset.get('x_offset', 0) * img.width / 100
+                    y += offset.get('y_offset', 0) * img.height / 100
+                
+                # === ИСПРАВЛЕНИЕ: Гарантируем, что текст не выходит за границы ===
+                # Определяем безопасные границы по горизонтали
+                safe_left = safe_margin
+                safe_right = img.width - safe_margin
+                
+                # Ограничиваем позицию безопасными границами
+                x = max(safe_left, min(x, safe_right))
+                
+                # Определяем выравнивание
+                align = position_config.get("align", "center")
+                
+                # Размер шрифта
+                font_sizes = template.get("font_sizes", {})
+                base_size = font_sizes.get(position_key, 24)
+                font_size = int(base_size * font_size_multiplier)
+                
+                # Динамический размер шрифта
+                min_font_size = 12
+                max_font_size = min(img.width, img.height) // 15  # Уменьшил делитель для большего шрифта
+                font_size = max(min_font_size, min(font_size, max_font_size))
+                
+                # Загружаем шрифт
+                try:
+                    font = FontManager.get_font(main_font_key, font_size)
+                except:
+                    font = FontManager.load_system_font('system_arial', font_size)
+                
+                # Цвет текста
+                colors = template.get("colors", {})
+                if position_key in colors:
+                    text_color = colors[position_key]
+                    if isinstance(text_color, list):
+                        text_color = tuple(text_color)
+                else:
+                    text_color = (0, 0, 0, 255)  # Черный по умолчанию
+                
+                # Проверяем размер текста
+                try:
+                    # Получаем размеры текста (для разных версий PIL)
+                    if hasattr(draw, 'textbbox'):  # PIL 9.x.x+
+                        bbox = draw.textbbox((0, 0), text, font=font)
+                        text_width = bbox[2] - bbox[0]
+                        text_height = bbox[3] - bbox[1]
+                    else:  # PIL 8.x.x
+                        text_width, text_height = draw.textsize(text, font=font)
                     
-                    # Применяем смещения
-                    text_offset_settings = safe_get_session_state('text_offset_settings', {})
-                    if position_key in text_offset_settings:
-                        offset = text_offset_settings[position_key]
-                        x += offset.get('x_offset', 0) * img.width / 100
-                        y += offset.get('y_offset', 0) * img.height / 100
+                    # Корректируем позицию в зависимости от выравнивания
+                    if align == "center":
+                        half_width = text_width // 2
+                        if x - half_width < safe_left:
+                            x = safe_left + half_width
+                        elif x + half_width > safe_right:
+                            x = safe_right - half_width
                     
-                    # === КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем, что текст внутри границ ===
-                    # Определяем безопасные границы
-                    safe_left = safe_margin
-                    safe_right = img.width - safe_margin
-                    safe_top = safe_margin
-                    safe_bottom = img.height - safe_margin
+                    elif align == "right":
+                        if x - text_width < safe_left:
+                            x = safe_left + text_width
+                        if x > safe_right:
+                            x = safe_right
                     
-                    # Ограничиваем позицию безопасными границами
-                    x = max(safe_left, min(x, safe_right))
-                    y = max(safe_top, min(y, safe_bottom))
+                    else:  # left
+                        if x + text_width > safe_right:
+                            x = safe_right - text_width
+                        if x < safe_left:
+                            x = safe_left
                     
-                    # Размер шрифта
-                    font_sizes = template.get("font_sizes", {})
-                    base_size = font_sizes.get(position_key, 24)
-                    font_size = int(base_size * font_size_multiplier)
+                    # Проверяем вертикальные границы
+                    if y - text_height/2 < safe_margin:
+                        y = safe_margin + text_height/2
+                    if y + text_height/2 > img.height - safe_margin:
+                        y = img.height - safe_margin - text_height/2
                     
-                    # Динамический размер шрифта в зависимости от размера изображения
-                    min_font_size = 12
-                    max_font_size = min(img.width, img.height) // 10
-                    font_size = max(min_font_size, min(font_size, max_font_size))
+                except Exception as e:
+                    logger.warning(f"Ошибка проверки размера текста '{text}': {e}")
+                
+                # === ВАЖНОЕ ИСПРАВЛЕНИЕ: Добавляем текст с правильным anchor ===
+                try:
+                    if align == "center":
+                        # anchor="mm" - центр текста по x и y
+                        draw.text((x, y), text, font=font, fill=text_color, anchor="mm")
+                    elif align == "right":
+                        # anchor="rm" - правый край по x, центр по y
+                        draw.text((x, y), text, font=font, fill=text_color, anchor="rm")
+                    else:  # left
+                        # anchor="lm" - левый край по x, центр по y
+                        draw.text((x, y), text, font=font, fill=text_color, anchor="lm")
                     
-                    # Загружаем шрифт
-                    font = FontManager.load_system_font(main_font_key, font_size)
+                    logger.debug(f"Текст добавлен: {position_key} = '{text[:30]}...' at ({x:.1f},{y:.1f})")
                     
-                    # Цвет текста
-                    colors = template.get("colors", {})
-                    text_color = colors.get(position_key, colors.get('text', (0, 0, 0, 255)))
-                    
-                    # Выравнивание
-                    align = position_config.get("align", "left")
-                    
-                    # Проверяем, помещается ли текст
+                except Exception as e:
+                    logger.error(f"Ошибка добавления текста '{text[:30]}...': {e}")
+                    # Пробуем альтернативный метод
                     try:
-                        # Получаем размеры текста
-                        if hasattr(draw, 'textbbox'):  # Для PIL 9.x.x+
-                            bbox = draw.textbbox((0, 0), text, font=font)
-                            text_width = bbox[2] - bbox[0]
-                            text_height = bbox[3] - bbox[1]
-                        else:  # Для PIL 8.x.x
-                            text_width, text_height = draw.textsize(text, font=font)
-                        
-                        # Проверяем, не выходит ли текст за границы
-                        if align == "center":
-                            half_width = text_width // 2
-                            if x - half_width < safe_left or x + half_width > safe_right:
-                                # Сдвигаем в безопасную зону
-                                x = max(safe_left + half_width, min(x, safe_right - half_width))
-                        elif align == "right":
-                            if x - text_width < safe_left:
-                                x = safe_left + text_width
-                            if x > safe_right:
-                                x = safe_right
-                        else:  # left
-                            if x + text_width > safe_right:
-                                x = safe_right - text_width
-                            if x < safe_left:
-                                x = safe_left
-                        
-                        # Проверяем по вертикали
-                        if y - text_height < safe_top:
-                            y = safe_top + text_height
-                        if y + text_height > safe_bottom:
-                            y = safe_bottom - text_height
-                        
-                    except Exception as e:
-                        logger.warning(f"Ошибка проверки размера текста: {e}")
-                    
-                    # Добавляем текст
-                    try:
-                        if align == "center":
-                            draw.text((x, y), text, font=font, fill=text_color, anchor="mm")
-                        elif align == "right":
-                            draw.text((x, y), text, font=font, fill=text_color, anchor="rm")
-                        else:
-                            draw.text((x, y), text, font=font, fill=text_color, anchor="lm")
-                    except Exception as e:
-                        logger.error(f"Ошибка добавления текста '{text}': {e}")
+                        draw.text((x, y), text, font=font, fill=text_color)
+                    except:
+                        pass
             
             return img
             
         except Exception as e:
-            logger.error(f"Ошибка добавления текста: {e}")
+            logger.error(f"Критическая ошибка добавления текста: {e}")
             return img
     
     @staticmethod
