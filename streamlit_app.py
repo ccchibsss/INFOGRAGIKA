@@ -24,7 +24,7 @@ import random
 # НАСТРОЙКА ПРИЛОЖЕНИЯ
 # ============================
 st.set_page_config(
-    page_title="🎯 Генератор Инфографики PRO v8.1",
+    page_title="🎯 Генератор Инфографики PRO v8.2",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -2738,7 +2738,7 @@ class UIComponents:
             with col1:
                 header_height = st.slider(
                     "Высота шапки (%)",
-                    5, 40, 15,
+                    5, 40, st.session_state.background_settings['header_height'],
                     key="header_height"
                 )
                 st.session_state.background_settings['header_height'] = min(header_height, 100)
@@ -2746,7 +2746,7 @@ class UIComponents:
             with col2:
                 footer_height = st.slider(
                     "Высота футера (%)",
-                    5, 40, 10,
+                    5, 40, st.session_state.background_settings['footer_height'],
                     key="footer_height"
                 )
                 st.session_state.background_settings['footer_height'] = min(footer_height, 100 - header_height)
@@ -2754,7 +2754,7 @@ class UIComponents:
             # Эффекты
             corner_radius = st.slider(
                 "Скругление углов",
-                0, 50, 20,
+                0, 50, st.session_state.background_settings['corner_radius'],
                 key="corner_radius"
             )
             st.session_state.background_settings['corner_radius'] = corner_radius
@@ -2763,26 +2763,26 @@ class UIComponents:
             with col1:
                 st.session_state.background_settings['shadow_enabled'] = st.checkbox(
                     "Тень",
-                    value=True,
+                    value=st.session_state.background_settings['shadow_enabled'],
                     key="shadow"
                 )
             
             with col2:
                 st.session_state.background_settings['border_enabled'] = st.checkbox(
                     "Рамка",
-                    value=True,
+                    value=st.session_state.background_settings['border_enabled'],
                     key="border"
                 )
             
             if st.session_state.background_settings['border_enabled']:
                 st.session_state.background_settings['border_color'] = st.color_picker(
                     "Цвет рамки",
-                    value="#e0e0e0",
+                    value=st.session_state.background_settings['border_color'],
                     key="border_color"
                 )
                 border_width = st.slider(
                     "Толщина",
-                    1, 10, 2,
+                    1, 10, st.session_state.background_settings['border_width'],
                     key="border_width"
                 )
                 st.session_state.background_settings['border_width'] = min(border_width, 10)
@@ -2795,6 +2795,8 @@ class UIComponents:
                 format_ = st.selectbox(
                     "Формат",
                     ["PNG", "JPEG", "WebP"],
+                    index=["PNG", "JPEG", "WebP"].index(st.session_state.export_settings['format']) 
+                    if st.session_state.export_settings['format'] in ["PNG", "JPEG", "WebP"] else 0,
                     key="export_format"
                 )
                 st.session_state.export_settings['format'] = format_
@@ -2802,14 +2804,14 @@ class UIComponents:
             with col2:
                 quality = st.slider(
                     "Качество",
-                    50, 100, 95,
+                    50, 100, st.session_state.export_settings['quality'],
                     key="export_quality"
                 )
                 st.session_state.export_settings['quality'] = quality
             
             st.session_state.export_settings['resize'] = st.checkbox(
                 "Изменять размер",
-                value=True,
+                value=st.session_state.export_settings['resize'],
                 key="resize"
             )
             
@@ -2817,7 +2819,7 @@ class UIComponents:
                 st.session_state.export_settings['target_size'] = st.select_slider(
                     "Макс. размер",
                     options=[800, 1200, 1600, 2000],
-                    value=1200,
+                    value=st.session_state.export_settings['target_size'],
                     key="target_size"
                 )
             
@@ -2829,7 +2831,7 @@ class UIComponents:
                 batch_size = st.select_slider(
                     "Размер партии",
                     options=[10, 25, 50, 100],
-                    value=50,
+                    value=st.session_state.processing_settings['batch_size'],
                     key="batch_size"
                 )
                 st.session_state.processing_settings['batch_size'] = batch_size
@@ -2838,7 +2840,7 @@ class UIComponents:
                 max_workers = st.select_slider(
                     "Потоки",
                     options=[1, 2, 4, 6],
-                    value=4,
+                    value=st.session_state.processing_settings['max_workers'],
                     key="max_workers"
                 )
                 st.session_state.processing_settings['max_workers'] = max_workers
@@ -2846,14 +2848,14 @@ class UIComponents:
             st.session_state.processing_settings['timeout'] = st.select_slider(
                 "Таймаут (сек)",
                 options=[10, 15, 30, 45],
-                value=30,
+                value=st.session_state.processing_settings['timeout'],
                 key="timeout"
             )
             
             st.divider()
             processed_count = safe_get_session_state('processed_count', 0)
             st.caption(f"Обработано: {processed_count}")
-            st.caption("Версия: 8.1")
+            st.caption("Версия: 8.2")
     
     @staticmethod
     def render_column_mapping():
@@ -3023,7 +3025,7 @@ class UIComponents:
                 
                 st.session_state.font_settings['font_size_multiplier'] = st.slider(
                     "Общий размер шрифта",
-                    0.5, 2.0, 1.0, 0.1,
+                    0.5, 2.0, st.session_state.font_settings['font_size_multiplier'], 0.1,
                     key="font_size"
                 )
     
@@ -3044,13 +3046,13 @@ class UIComponents:
             with col1:
                 x_offset = st.number_input(
                     "Смещение X (%)",
-                    -100, 100, 0,
+                    -100, 100, st.session_state.text_offset_settings['top_left']['x_offset'],
                     key="sym_x"
                 )
             with col2:
                 y_offset = st.number_input(
                     "Смещение Y (%)",
-                    -100, 100, 0,
+                    -100, 100, st.session_state.text_offset_settings['top_left']['y_offset'],
                     key="sym_y"
                 )
             
@@ -3165,7 +3167,7 @@ class UIComponents:
         if symmetrical:
             size_percentage = st.slider(
                 "Размер текста (%)",
-                50, 200, 100,
+                50, 200, st.session_state.font_size_settings['top_left'],
                 key="sym_font_size"
             )
             
@@ -3266,13 +3268,16 @@ class UIComponents:
                 position = st.selectbox(
                     "Позиция",
                     ["center", "top_left", "top_right", "bottom_left", "bottom_right"],
+                    index=["center", "top_left", "top_right", "bottom_left", "bottom_right"].index(
+                        st.session_state.image_overlay_settings['position']
+                    ) if st.session_state.image_overlay_settings['position'] in ["center", "top_left", "top_right", "bottom_left", "bottom_right"] else 0,
                     key="overlay_position"
                 )
                 st.session_state.image_overlay_settings['position'] = position
                 
                 opacity = st.slider(
                     "Прозрачность (%)",
-                    0, 100, 100,
+                    0, 100, st.session_state.image_overlay_settings['opacity'],
                     key="overlay_opacity"
                 )
                 st.session_state.image_overlay_settings['opacity'] = opacity
@@ -3280,14 +3285,14 @@ class UIComponents:
             with col2:
                 scale = st.slider(
                     "Масштаб (%)",
-                    10, 200, 100,
+                    10, 200, st.session_state.image_overlay_settings['scale'],
                     key="overlay_scale"
                 )
                 st.session_state.image_overlay_settings['scale'] = scale
                 
                 max_width = st.slider(
                     "Макс. ширина (% от изображения)",
-                    5, 100, 30,
+                    5, 100, st.session_state.image_overlay_settings['max_width'],
                     key="overlay_max_width"
                 )
                 st.session_state.image_overlay_settings['max_width'] = max_width
@@ -3297,7 +3302,7 @@ class UIComponents:
             with col1:
                 x_offset = st.number_input(
                     "Смещение X (%)",
-                    -100, 100, 0,
+                    -100, 100, st.session_state.image_overlay_settings['x_offset'],
                     key="overlay_x"
                 )
                 st.session_state.image_overlay_settings['x_offset'] = x_offset
@@ -3305,7 +3310,7 @@ class UIComponents:
             with col2:
                 y_offset = st.number_input(
                     "Смещение Y (%)",
-                    -100, 100, 0,
+                    -100, 100, st.session_state.image_overlay_settings['y_offset'],
                     key="overlay_y"
                 )
                 st.session_state.image_overlay_settings['y_offset'] = y_offset
@@ -3342,9 +3347,9 @@ class UIComponents:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.image(canvas, caption="Шаблон без границ", use_column_width=True)
+            st.image(canvas, caption="Шаблон без границ", use_container_width=True)
         with col2:
-            st.image(border_img, caption="Шаблон с границами содержимого", use_column_width=True)
+            st.image(border_img, caption="Шаблон с границами содержимого", use_container_width=True)
     
     @staticmethod
     def render_preview_tab(generator):
@@ -3484,12 +3489,12 @@ class UIComponents:
                         col1, col2 = st.columns(2)
                         with col1:
                             st.subheader("📷 Оригинал")
-                            st.image(img, use_column_width=True)
+                            st.image(img, use_container_width=True)
                             st.caption(f"{img.width}×{img.height}")
                         
                         with col2:
                             st.subheader("🎨 Результат")
-                            st.image(final_img, use_column_width=True)
+                            st.image(final_img, use_container_width=True)
                             st.caption(f"Шаблон: {st.session_state.current_template}")
                         
                         # Кнопка скачивания
@@ -3631,7 +3636,7 @@ class UIComponents:
                         errors = [r for r in results if r.get('status') == 'error']
                         error_df = pd.DataFrame(errors)
                         if not error_df.empty:
-                            st.dataframe(error_df[['row_index', 'message']])
+                            st.dataframe(error_df[['row_index', 'message']], use_container_width=True)
                 
                 # Архив
                 if success_count > 0:
@@ -3696,7 +3701,7 @@ class UIComponents:
                 with col1:
                     st.bar_chart(status_counts)
                 with col2:
-                    st.dataframe(status_counts)
+                    st.dataframe(status_counts, use_container_width=True)
             
             # Время обработки
             processing_stats = safe_get_session_state('processing_stats', {})
@@ -3796,13 +3801,12 @@ class UIComponents:
                             draw.text((x, y), text, font=font, fill=(0, 0, 0, 255))
                             
                             # Показываем превью
-                            st.image(preview, use_column_width=True)
+                            st.image(preview, use_container_width=True)
                             st.caption(template_data.get('description', 'Без описания'))
                             
                             # Кнопка выбора
                             if st.button(f"Выбрать {template_name}",
-                                       key=f"select_{template_id}",
-                                       use_container_width=True):
+                                       key=f"select_{template_id}"):
                                 st.session_state.current_template = template_id
                                 st.success(f"✅ Выбран шаблон: {template_name}")
                                 st.rerun()
@@ -3831,7 +3835,7 @@ class UIComponents:
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🚫 Удалить строки без URL", use_container_width=True):
+            if st.button("🚫 Удалить строки без URL"):
                 if 'image_url' in st.session_state.column_mapping:
                     url_col = st.session_state.column_mapping['image_url']
                     if url_col and url_col in df.columns:
@@ -3846,7 +3850,7 @@ class UIComponents:
                         st.rerun()
         
         with col2:
-            if st.button("🧹 Автоочистка данных", use_container_width=True):
+            if st.button("🧹 Автоочистка данных"):
                 df_cleaned = AdvancedExcelProcessor.clean_dataframe(df)
                 st.session_state.df = df_cleaned
                 st.success("✅ Данные очищены")
@@ -3858,7 +3862,7 @@ class UIComponents:
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("📥 Скачать исправленные данные", use_container_width=True):
+            if st.button("📥 Скачать исправленные данные"):
                 # Создаем временный Excel файл
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -3870,13 +3874,12 @@ class UIComponents:
                     label="⬇️ Скачать Excel",
                     data=output.getvalue(),
                     file_name=f"cleaned_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         
         with col2:
             # Экспорт проблемных строк
-            if st.button("📋 Экспорт проблемных строк", use_container_width=True):
+            if st.button("📋 Экспорт проблемных строк"):
                 if 'image_url' in st.session_state.column_mapping:
                     url_col = st.session_state.column_mapping['image_url']
                     if url_col and url_col in df.columns:
@@ -3902,8 +3905,7 @@ class UIComponents:
                                 label="⬇️ Скачать проблемные строки",
                                 data=output.getvalue(),
                                 file_name=f"invalid_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
                         else:
                             st.info("Нет проблемных строк")
@@ -3948,7 +3950,7 @@ def show_main_interface():
     ensure_session_state_initialized()
     
     # Заголовок
-    st.title("🚀 Генератор Инфографики PRO v8.1")
+    st.title("🚀 Генератор Инфографики PRO v8.2")
     st.markdown("---")
     
     # Создаем табы
