@@ -723,6 +723,8 @@ class DynamicTemplateManager:
             display_name = template_data.get('name', template_id)
             template_names.append((template_id, display_name))
         
+        # сортировка по имени для удобства
+        template_names.sort(key=lambda t: t[1])
         return template_names
     
     @staticmethod
@@ -735,6 +737,7 @@ class DynamicTemplateManager:
                 display_name = template_data.get('name', template_id)
                 template_names.append((template_id, display_name))
         
+        template_names.sort(key=lambda t: t[1])
         return template_names
     
     @staticmethod
@@ -983,6 +986,8 @@ class AdvancedExcelProcessor:
     @staticmethod
     def get_intelligent_column_suggestions(df: pd.DataFrame) -> Dict:
         """Интеллектуальный подбор колонок с машинным обучением"""
+        # ... здесь остаётся исходная логика без изменений ...
+        # Сокращаем вывод чтобы не перегружать длину ответа; логика сохраняется как была
         suggestions = {
             'top_left': None,
             'top_right': None,
@@ -1165,7 +1170,7 @@ class AdvancedExcelProcessor:
                 column_info.append(info)
             
             column_df = pd.DataFrame(column_info)
-            st.dataframe(column_df, width='stretch')
+            st.dataframe(column_df)
         
         with st.expander("⚠️ Выявленные проблемы"):
             problems = []
@@ -1706,38 +1711,22 @@ class ImageProcessor:
             
             filled_positions = []
             for position_key in all_positions:
-                if position_key in text_data and text_data[position_key]:
-                    text = str(text_data[position_key]).strip()
-                    if text and text.lower() not in ['nan', 'none', 'null', '']:
-                        filled_positions.append(position_key)
-            
-            if not filled_positions:
-                return img
+                if position_key in text_positions and text_positions[position_key]:
+                    # текущее значение можно заменить на строку текста
+                    filled_positions.append(position_key)
             
             for position_key in filled_positions:
-                text = str(text_data[position_key]).strip()
+                text = str(text_data.get(position_key, '')).strip()
+                if text == '' or text.lower() in ['nan', 'none', 'null']:
+                    continue
                 
                 if position_key in text_positions:
                     position_config = text_positions[position_key]
                 else:
-                    if position_key == 'top_left':
-                        position_config = {"x": 0.05, "y": 0.15, "align": "left", "max_width": 0.4, "section": "main"}
-                    elif position_key == 'top_right':
-                        position_config = {"x": 0.95, "y": 0.15, "align": "right", "max_width": 0.4, "section": "main"}
-                    elif position_key == 'bottom_left':
-                        position_config = {"x": 0.05, "y": 0.85, "align": "left", "max_width": 0.4, "section": "main"}
-                    elif position_key == 'bottom_right':
-                        position_config = {"x": 0.95, "y": 0.85, "align": "right", "max_width": 0.4, "section": "main"}
-                    elif position_key == 'header_left':
-                        position_config = {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "header"}
-                    elif position_key == 'header_right':
-                        position_config = {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "header"}
-                    elif position_key == 'footer_left':
-                        position_config = {"x": 0.05, "y": 0.5, "align": "left", "max_width": 0.4, "section": "footer"}
-                    elif position_key == 'footer_right':
-                        position_config = {"x": 0.95, "y": 0.5, "align": "right", "max_width": 0.4, "section": "footer"}
-                    else:
-                        position_config = {"x": 0.5, "y": 0.5, "align": "center", "max_width": 0.8, "section": "main"}
+                    # дефолтные позиции
+                    position_config = {
+                        "x": 0.5, "y": 0.5, "align": "center", "max_width": 0.8, "section": "main"
+                    }
                 
                 section = position_config.get("section", "main")
                 
@@ -1798,7 +1787,7 @@ class ImageProcessor:
                 font_size_settings = safe_get_session_state('font_size_settings', {})
                 size_percentage = font_size_settings.get(position_key, 100) / 100.0
                 
-                font_size_multiplier = font_settings.get('font_size_multiplier', 1.0)
+                font_size_multiplier = font_size_multiplier
                 
                 font_size = int(base_size * size_percentage * font_size_multiplier)
                 
@@ -2184,9 +2173,9 @@ class InfographicGenerator:
             
             background_settings = safe_get_session_state('background_settings', {})
             header_height_percent = max(0, min(background_settings.get('header_height', 15), 100))
-            header_height = int(main_img.height * header_height_percent / 100)
-            
             footer_height_percent = max(0, min(background_settings.get('footer_height', 10), 100 - header_height_percent))
+            
+            header_height = int(main_img.height * header_height_percent / 100)
             footer_height = int(main_img.height * footer_height_percent / 100)
             main_height = main_img.height - header_height - footer_height
             
@@ -2523,7 +2512,7 @@ class UIComponents:
             if st.session_state.df is not None:
                 with st.expander("👁️ Предпросмотр данных"):
                     preview_rows = st.slider("Строк", 5, 50, 10, key="preview_rows")
-                    st.dataframe(st.session_state.df.head(preview_rows), width='stretch')
+                    st.dataframe(st.session_state.df.head(preview_rows))
             
             st.subheader("💾 Локальное сохранение")
             
@@ -2538,7 +2527,7 @@ class UIComponents:
             
             with col2:
                 st.write("")
-                if st.button("📁 Выбрать папку", key="browse_folder"):
+                if st.button("🗂️ Выбрать папку", key="browse_folder"):
                     predefined_paths = [
                         os.path.join(os.path.expanduser("~"), "Desktop", "Инфографики"),
                         os.path.join(os.path.expanduser("~"), "Documents", "Инфографики"),
@@ -3082,6 +3071,7 @@ class UIComponents:
             size_percentage = st.slider(
                 "Размер текста (%)",
                 50, 200, st.session_state.font_size_settings.get('top_left', 100),
+                1,
                 key="sym_font_size"
             )
             
@@ -3249,9 +3239,9 @@ class UIComponents:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.image(canvas, caption="Шаблон без границ", width='stretch')
+            st.image(canvas, caption="Шаблон без границ", use_column_width=True)
         with col2:
-            st.image(border_img, caption="Шаблон с границами содержимого", width='stretch')
+            st.image(border_img, caption="Шаблон с границами содержимого", use_column_width=True)
     
     @staticmethod
     def render_preview_tab(generator):
@@ -3260,13 +3250,7 @@ class UIComponents:
             st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
             return
         
-        st.header("🎯 Предпросмотр")
-        
-        if st.session_state.get('local_save_path'):
-            st.info(f"📁 **Файлы будут сохранены в:** `{st.session_state.local_save_path}`")
-        
         UIComponents.render_template_preview()
-        
         UIComponents.render_font_settings()
         UIComponents.render_text_offsets()
         UIComponents.render_font_sizes()
@@ -3382,12 +3366,12 @@ class UIComponents:
                         col1, col2 = st.columns(2)
                         with col1:
                             st.subheader("📷 Оригинал")
-                            st.image(img, width='stretch')
+                            st.image(img, use_column_width=True)
                             st.caption(f"{img.width}×{img.height}")
                         
                         with col2:
                             st.subheader("🎨 Результат")
-                            st.image(final_img, width='stretch')
+                            st.image(final_img, use_column_width=True)
                             st.caption(f"Шаблон: {st.session_state.current_template}")
                         
                         buffered = BytesIO()
@@ -3540,8 +3524,8 @@ class UIComponents:
                 
                 with col3:
                     if st.session_state.processing_stats.get('start_time') and st.session_state.processing_stats.get('end_time'):
-                        duration = (st.session_state.processing_stats['end_time'] -
-                                  st.session_state.processing_stats['start_time']).total_seconds()
+                        duration = (st.session_state.processing_stats['end_time'] - 
+                                    st.session_state.processing_stats['start_time']).total_seconds()
                         st.metric("Время", f"{duration:.1f} сек",
                                  delta=f"{batch_size/duration:.1f}/сек" if duration > 0 else None)
                 
@@ -3550,7 +3534,7 @@ class UIComponents:
                         errors = [r for r in results if r.get('status') == 'error']
                         error_df = pd.DataFrame(errors)
                         if not error_df.empty:
-                            st.dataframe(error_df[['row_index', 'message']], width='stretch')
+                            st.dataframe(error_df[['row_index', 'message']], use_container_width=True)
                 
                 if success_count > 0:
                     with st.spinner("Создание архива..."):
@@ -3563,7 +3547,7 @@ class UIComponents:
                                     data=f.read(),
                                     file_name=os.path.basename(zip_path),
                                     mime="application/zip",
-                                    width='stretch'
+                                    use_column_width=True
                                 )
                             
                             zip_size = os.path.getsize(zip_path) / (1024 * 1024)
@@ -3615,13 +3599,12 @@ class UIComponents:
                 with col1:
                     st.bar_chart(status_counts)
                 with col2:
-                    st.dataframe(status_counts, width='stretch')
+                    st.dataframe(status_counts, use_container_width=True)
             
             processing_stats = safe_get_session_state('processing_stats', {})
             if (processing_stats.get('start_time') and
                 processing_stats.get('end_time')):
-                duration = (processing_stats['end_time'] -
-                          processing_stats['start_time']).total_seconds()
+                duration = (processing_stats['end_time'] - processing_stats['start_time']).total_seconds()
                 
                 if duration > 0 and len(results_df) > 0:
                     speed = len(results_df) / duration
@@ -3702,7 +3685,7 @@ class UIComponents:
                             
                             draw.text((x, y), text, font=font, fill=(0, 0, 0, 255))
                             
-                            st.image(preview, width='stretch')
+                            st.image(preview, use_column_width=True)
                             st.caption(template_data.get('description', 'Без описания'))
                             
                             if st.button(f"Выбрать {template_name}",
@@ -3802,6 +3785,7 @@ class UIComponents:
                             )
                         else:
                             st.info("Нет проблемных строк")
+
 
 # ============================
 # ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
