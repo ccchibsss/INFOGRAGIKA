@@ -2493,14 +2493,14 @@ def main() -> None:
     print("📖 ИНСТРУКЦИЯ ПО ИСПОЛЬЗОВАНИЮ:")
     print("="*70)
     
-    print("""
+    print(
+        '''
 1. ПОДГОТОВКА ДАННЫХ:
   - Создайте Excel файл с данными автозапчастей
   - Обязательные колонки: Название, Цена, Бренд
   - Рекомендуемые колонки: OEM, Старая цена, Категория
 
-2. ГЕНЕРАЦИЯ ИНФОГРАФИК:
-  ```python
+2. ГЕНЕРАЦИЯ ИНФОГРАФИКИ:
   # Импортируйте необходимые классы
   from auto_infographic import EnhancedAutoPartsBatchGenerator, TemplateStyle
   import pandas as pd
@@ -2518,3 +2518,5 @@ def main() -> None:
       use_background=True,
       background_type='product_card'
   )
+        '''
+    )
