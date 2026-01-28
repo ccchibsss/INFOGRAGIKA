@@ -13,7 +13,7 @@ rich>=10.14.0,<14
 # Дополнительные библиотеки
 fonttools==4.61.1
 kiwisolver==1.4.9
-packaging==26.0
+packaging==23.0
 pygments==2.19.2
 markdown-it-py==4.0.0
 mdurl==0.1.2
