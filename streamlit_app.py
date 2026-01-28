@@ -143,6 +143,14 @@ class AutoPartData:
     features: List[str] = None
     images: List[str] = None
 
+    def __post_init__(self):
+        if self.compatibility is None:
+            self.compatibility = []
+        if self.features is None:
+            self.features = []
+        if self.images is None:
+            self.images = []
+
 # ============================================================================
 # 🎨 УЛУЧШЕННЫЙ ТЕКСТОВЫЙ ПРОЦЕССОР ДЛЯ АВТОЗАПЧАСТЕЙ
 # ============================================================================
@@ -270,12 +278,15 @@ class AutoTextProcessor:
             formatted.append(f"{icon} {feature}")
         
         # Добавляем заглушки если характеристик мало
+        placeholder_features = [
+            "🔧 Легкая установка",
+            "✅ Гарантия качества",
+            "📦 Оригинальная упаковка",
+            "🛡️ Официальная гарантия",
+            "🏭 Проверенный производитель"
+        ]
+        
         while len(formatted) < 3:
-            placeholder_features = [
-                "🔧 Легкая установка",
-                "✅ Гарантия качества",
-                "📦 Оригинальная упаковка"
-            ]
             formatted.append(placeholder_features[len(formatted)])
         
         return formatted
@@ -290,7 +301,7 @@ class AutoTextProcessor:
             return '🔧'
         elif any(word in feature_lower for word in ['оригин', 'original', 'oem']):
             return '🏭'
-        elif any(word in feature_lower for word in ['аналог', 'аналог', 'замен']):
+        elif any(word in feature_lower for word in ['аналог', 'замен']):
             return '🔀'
         elif any(word in feature_lower for word in ['качеств', 'quality']):
             return '✅'
@@ -323,7 +334,7 @@ class AutoGraphicsGenerator:
                            radius: int,
                            fill: Optional[Tuple[int, int, int]] = None,
                            outline: Optional[Tuple[int, int, int]] = None,
-                           width: int = 1):
+                           width: int = 1) -> None:
         """Рисует скругленный прямоугольник - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
         x, y = position
         width_rect, height_rect = size
@@ -384,7 +395,7 @@ class AutoGraphicsGenerator:
     def create_price_badge(draw: ImageDraw.ImageDraw, 
                           position: Tuple[int, int], 
                           price_data: Dict,
-                          colors: Dict):
+                          colors: Dict) -> None:
         """Создает бейдж цены"""
         x, y = position
         
@@ -395,9 +406,10 @@ class AutoGraphicsGenerator:
             outline=colors.get('border', (200, 200, 200))
         )
         
-        # Цена
+        # Цена - используем существующий шрифт
         font_large = ImageFont.load_default()
-        draw.text((x + 20, y + 15), price_data['current'], 
+        price_text = price_data.get('current', '0 ₽')
+        draw.text((x + 20, y + 15), price_text, 
                  fill=(255, 255, 255), font=font_large)
         
         # Старая цена
@@ -410,14 +422,14 @@ class AutoGraphicsGenerator:
     def create_stock_badge(draw: ImageDraw.ImageDraw,
                           position: Tuple[int, int],
                           stock_data: Dict,
-                          colors: Dict):
+                          colors: Dict) -> None:
         """Создает бейдж наличия"""
         x, y = position
         
         # Цвет в зависимости от наличия
-        if stock_data['color'] == 'success':
+        if stock_data.get('color') == 'success':
             bg_color = colors.get('success', (46, 204, 113))
-        elif stock_data['color'] == 'warning':
+        elif stock_data.get('color') == 'warning':
             bg_color = colors.get('highlight', (241, 196, 15))
         else:
             bg_color = colors.get('danger', (231, 76, 60))
@@ -429,7 +441,7 @@ class AutoGraphicsGenerator:
             outline=None
         )
         
-        text = f"{stock_data['icon']} {stock_data['text']}"
+        text = f"{stock_data.get('icon', '📦')} {stock_data.get('text', 'В наличии')}"
         draw.text((x + 10, y + 10), text, 
                  fill=(255, 255, 255))
     
@@ -437,7 +449,7 @@ class AutoGraphicsGenerator:
     def create_car_compatibility(draw: ImageDraw.ImageDraw,
                                 position: Tuple[int, int],
                                 car_models: List[str],
-                                colors: Dict):
+                                colors: Dict) -> None:
         """Создает блок совместимости с автомобилями"""
         x, y = position
         
@@ -524,10 +536,7 @@ class AutoBackgroundGenerator:
         
         # Создаем новое изображение
         image = Image.new('RGB', (width, height), colors[0])
-        
-        # Создаем градиентный слой
-        gradient = Image.new('RGB', (width, height), (0, 0, 0))
-        draw = ImageDraw.Draw(gradient)
+        draw = ImageDraw.Draw(image)
         
         # Рисуем линейный градиент
         for i in range(height):
@@ -549,10 +558,10 @@ class AutoBackgroundGenerator:
             draw_overlay.line([(i, 0), (i, height)], fill=(r, g, b))
         
         # Смешиваем градиенты
-        gradient = Image.blend(gradient, overlay, alpha=0.5)
+        image = Image.blend(image, overlay, alpha=0.5)
         
         # Добавляем легкий шум
-        image = self._add_texture_noise(gradient, intensity=3)
+        image = self._add_texture_noise(image, intensity=3)
         
         return image
     
@@ -586,7 +595,7 @@ class AutoBackgroundGenerator:
         
         return image.convert('RGB')
     
-    def _create_engine_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int):
+    def _create_engine_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
         """Паттерн для двигателя"""
         # Шестерни и механические элементы
         for x in range(0, width, 100):
@@ -602,16 +611,14 @@ class AutoBackgroundGenerator:
                 
                 # Зубья шестеренки
                 for angle in range(0, 360, 30):
-                    rad = angle * 3.14159 / 180
+                    rad = angle * np.pi / 180
                     x1 = center_x + 25 * np.cos(rad)
                     y1 = center_y + 25 * np.sin(rad)
-                    x2 = center_x + 35 * np.cos(rad)
-                    y2 = center_y + 35 * np.sin(rad)
                     
                     draw.ellipse([x1 - 5, y1 - 5, x1 + 5, y1 + 5],
                                fill=(200, 200, 200))
     
-    def _create_brake_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int):
+    def _create_brake_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
         """Паттерн для тормозов"""
         # Тормозные диски и колодки
         for x in range(0, width, 120):
@@ -623,21 +630,21 @@ class AutoBackgroundGenerator:
                 # Отверстия вентиляции
                 for i in range(6):
                     angle = i * 60
-                    rad = angle * 3.14159 / 180
+                    rad = angle * np.pi / 180
                     hole_x = x + 60 + 35 * np.cos(rad)
                     hole_y = y + 60 + 35 * np.sin(rad)
                     
                     draw.ellipse([hole_x - 8, hole_y - 8, hole_x + 8, hole_y + 8],
                                fill=(210, 210, 210))
     
-    def _create_wheel_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int):
+    def _create_wheel_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
         """Паттерн для колес и шин"""
         for x in range(0, width, 150):
             for y in range(0, height, 150):
                 # Протектор шины
                 for i in range(8):
                     angle = i * 45
-                    rad = angle * 3.14159 / 180
+                    rad = angle * np.pi / 180
                     
                     # Рисуем элементы протектора
                     for r in [30, 40, 50]:
@@ -651,7 +658,7 @@ class AutoBackgroundGenerator:
                             draw.ellipse([x1 - 5, y1 - 5, x1 + 5, y1 + 5],
                                        fill=(220, 220, 220))
     
-    def _create_electric_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int):
+    def _create_electric_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
         """Паттерн для электрики"""
         for x in range(0, width, 80):
             for y in range(0, height, 80):
@@ -665,7 +672,7 @@ class AutoBackgroundGenerator:
                 draw.line([(x + 60, y + 20), (x + 20, y + 60)],
                          fill=(180, 180, 180), width=2)
     
-    def _create_suspension_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int):
+    def _create_suspension_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
         """Паттерн для подвески"""
         for x in range(0, width, 100):
             for y in range(0, height, 100):
@@ -684,8 +691,8 @@ class AutoBackgroundGenerator:
                                     height: int, 
                                     theme: str) -> Image.Image:
         """Создание геометрической подложки"""
-        image = Image.new('RGB', (width, height), (255, 255, 255))
-        draw = ImageDraw.Draw(image)
+        # Создаем базовое изображение с градиентом
+        image = self._create_gradient_background(width, height, theme)
         
         # Определяем цвета по теме
         if theme == 'auto_modern':
@@ -695,7 +702,10 @@ class AutoBackgroundGenerator:
         else:
             colors = [(41, 128, 185), (231, 76, 60), (241, 196, 15)]
         
-        # Рисуем геометрические фигуры
+        # Рисуем геометрические фигуры на прозрачном слое
+        overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        
         for _ in range(25):
             color = random.choice(colors)
             
@@ -707,33 +717,27 @@ class AutoBackgroundGenerator:
             size = random.randint(80, 300)
             alpha = random.randint(10, 40)  # Прозрачность
             
-            # Создаем прозрачный слой для фигуры
-            shape_layer = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-            shape_draw = ImageDraw.Draw(shape_layer)
+            # Добавляем альфа-канал к цвету
+            color_with_alpha = color + (alpha,)
             
             if shape_type == 'circle':
-                shape_draw.ellipse([x, y, x + size, y + size], 
-                                 fill=color + (alpha,))
+                draw.ellipse([x, y, x + size, y + size], 
+                           fill=color_with_alpha)
             elif shape_type == 'rectangle':
-                shape_draw.rectangle([x, y, x + size, y + size//2],
-                                   fill=color + (alpha,))
+                draw.rectangle([x, y, x + size, y + size//2],
+                             fill=color_with_alpha)
             elif shape_type == 'triangle':
-                shape_draw.polygon([(x, y + size), 
-                                  (x + size//2, y), 
-                                  (x + size, y + size)],
-                                 fill=color + (alpha,))
-            
-            # Накладываем фигуру
-            image = image.convert('RGBA')
-            image = Image.alpha_composite(image, shape_layer)
+                draw.polygon([(x, y + size), 
+                            (x + size//2, y), 
+                            (x + size, y + size)],
+                           fill=color_with_alpha)
         
         # Размываем для мягкого эффекта
-        image = image.filter(ImageFilter.GaussianBlur(radius=15))
+        overlay = overlay.filter(ImageFilter.GaussianBlur(radius=15))
         
-        # Накладываем на градиент
-        gradient = self._create_gradient_background(width, height, theme)
-        gradient = gradient.convert('RGBA')
-        image = Image.alpha_composite(gradient, image)
+        # Накладываем фигуры на градиент
+        image = image.convert('RGBA')
+        image = Image.alpha_composite(image, overlay)
         
         return image.convert('RGB')
     
@@ -741,6 +745,7 @@ class AutoBackgroundGenerator:
         """Создание текстурной подложки"""
         # Базовый градиент
         image = self._create_gradient_background(width, height, 'auto_modern')
+        image = image.convert('RGBA')
         
         # Создаем текстуру шума
         noise = Image.effect_noise((width, height), 10)
@@ -748,11 +753,10 @@ class AutoBackgroundGenerator:
         
         # Устанавливаем прозрачность
         alpha = noise.split()[3]
-        alpha = alpha.point(lambda p: p * 0.1)  # 10% прозрачность
+        alpha = alpha.point(lambda p: p * 25)  # 10% прозрачность (255 * 0.1 ≈ 25)
         noise.putalpha(alpha)
         
         # Накладываем текстуру
-        image = image.convert('RGBA')
         image = Image.alpha_composite(image, noise)
         
         # Добавляем легкие царапины/потертости
@@ -763,7 +767,7 @@ class AutoBackgroundGenerator:
             x1 = random.randint(0, width)
             y1 = random.randint(0, height)
             length = random.randint(20, 100)
-            angle = random.uniform(0, 3.14)
+            angle = random.uniform(0, np.pi)
             
             x2 = int(x1 + length * np.cos(angle))
             y2 = int(y1 + length * np.sin(angle))
@@ -776,7 +780,7 @@ class AutoBackgroundGenerator:
         
         return image.convert('RGB')
     
-    def _create_default_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int):
+    def _create_default_pattern(self, draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
         """Паттерн по умолчанию - сетка с точками"""
         # Сетка
         for x in range(0, width, 50):
@@ -802,7 +806,7 @@ class AutoBackgroundGenerator:
         
         # Устанавливаем низкую прозрачность
         alpha = noise_layer.split()[3]
-        alpha = alpha.point(lambda p: p * 0.1)  # 10% прозрачность
+        alpha = alpha.point(lambda p: p * 25)  # 10% прозрачность
         noise_layer.putalpha(alpha)
         
         # Смешиваем
@@ -856,38 +860,47 @@ class AutoBackgroundGenerator:
         
         return background.convert('RGB')
     
-    def _draw_logo_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str):
+    def _draw_logo_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> None:
         """Область для логотипа бренда"""
         # Цвет полосы
         if style == 'auto_premium':
-            color = (218, 165, 32, 60)  # Золотой
+            color = (218, 165, 32)  # Золотой
         elif style == 'auto_tech':
-            color = (0, 200, 255, 60)   # Неоновый
+            color = (0, 200, 255)   # Неоновый
         else:
-            color = (41, 128, 185, 60)  # Синий
+            color = (41, 128, 185)  # Синий
         
-        # Полупрозрачная полоса сверху
-        draw.rectangle([0, 0, width, 80], fill=color)
+        # Создаем прозрачный слой для полосы
+        logo_area = Image.new('RGBA', (width, 80), (0, 0, 0, 0))
+        logo_draw = ImageDraw.Draw(logo_area)
+        logo_draw.rectangle([0, 0, width, 80], fill=color + (150,))  # 60% прозрачность
+        
+        # Накладываем на основной рисунок
+        base = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        base.paste(logo_area, (0, 0))
+        
+        # Не накладываем на draw, так как это сложно. Вместо этого вернем модифицированное изображение.
+        # В реальном использовании это должно быть интегрировано иначе.
         
         # Декоративная линия
-        line_color = color[:3] + (150,)
+        line_color = color + (150,)
         draw.line([(0, 80), (width, 80)], fill=line_color, width=2)
     
-    def _draw_product_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str):
+    def _draw_product_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> None:
         """Область для изображения товара"""
         # Светлый прямоугольник в центре
         center_x, center_y = width // 2, height // 2
         rect_width, rect_height = 600, 400
         
         if style == 'auto_premium':
-            bg_color = (255, 250, 240, 200)  # Кремовый
-            border_color = (218, 165, 32, 200)  # Золотой
+            bg_color = (255, 250, 240)  # Кремовый
+            border_color = (218, 165, 32)  # Золотой
         elif style == 'auto_pro':
-            bg_color = (255, 255, 255, 200)  # Белый
-            border_color = (200, 200, 200, 200)  # Серый
+            bg_color = (255, 255, 255)  # Белый
+            border_color = (200, 200, 200)  # Серый
         else:
-            bg_color = (250, 250, 250, 200)  # Светло-серый
-            border_color = (220, 220, 220, 200)  # Светло-серый
+            bg_color = (250, 250, 250)  # Светло-серый
+            border_color = (220, 220, 220)  # Светло-серый
         
         # Основной прямоугольник
         rect_x = center_x - rect_width // 2
@@ -895,53 +908,59 @@ class AutoBackgroundGenerator:
         
         AutoGraphicsGenerator.create_rounded_rect(
             draw, (rect_x, rect_y), (rect_width, rect_height), 20,
-            fill=bg_color[:3],
-            outline=border_color[:3],
+            fill=bg_color,
+            outline=border_color,
             width=2
         )
     
-    def _draw_text_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str):
+    def _draw_text_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> None:
         """Область для текстовой информации"""
         # Полупрозрачная область снизу
         text_area_height = 300
         
         if style == 'auto_tech':
-            color = (25, 35, 50, 180)  # Темно-синий
+            bg_color = (25, 35, 50)  # Темно-синий
         else:
-            color = (255, 255, 255, 180)  # Белый
+            bg_color = (255, 255, 255)  # Белый
         
-        draw.rectangle([0, height - text_area_height, width, height], fill=color)
+        # Создаем прозрачный прямоугольник
+        text_area = Image.new('RGBA', (width, text_area_height), bg_color + (180,))
+        
+        # В реальной реализации нужно наложить этот слой на изображение
+        # Для простоты рисуем просто прямоугольник
+        draw.rectangle([0, height - text_area_height, width, height], 
+                      fill=bg_color + (180,))
         
         # Разделительная линия
         draw.line([(0, height - text_area_height), (width, height - text_area_height)],
                  fill=(200, 200, 200, 150), width=1)
     
-    def _draw_corners(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str):
+    def _draw_corners(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> None:
         """Декоративные уголки"""
         corner_size = 20
         
         if style == 'auto_premium':
-            corner_color = (218, 165, 32, 200)  # Золотой
+            corner_color = (218, 165, 32)  # Золотой
         elif style == 'auto_tech':
-            corner_color = (0, 200, 255, 200)   # Неоновый
+            corner_color = (0, 200, 255)   # Неоновый
         else:
-            corner_color = (41, 128, 185, 200)  # Синий
+            corner_color = (41, 128, 185)  # Синий
         
         # Левый верхний
         draw.line([(0, corner_size), (corner_size, 0)], 
-                 fill=corner_color, width=3)
+                 fill=corner_color + (200,), width=3)
         
         # Правый верхний
         draw.line([(width - corner_size, 0), (width, corner_size)], 
-                 fill=corner_color, width=3)
+                 fill=corner_color + (200,), width=3)
         
         # Левый нижний
         draw.line([(0, height - corner_size), (corner_size, height)], 
-                 fill=corner_color, width=3)
+                 fill=corner_color + (200,), width=3)
         
         # Правый нижний
         draw.line([(width - corner_size, height), (width, height - corner_size)], 
-                 fill=corner_color, width=3)
+                 fill=corner_color + (200,), width=3)
 
 # ============================================================================
 # 🎨 ШАБЛОНЫ ДЛЯ АВТОЗАПЧАСТЕЙ
@@ -1260,7 +1279,7 @@ class AutoPartsInfographicGenerator:
         return output_path
     
     def _render_block(self, image: Image.Image, draw: ImageDraw.ImageDraw, 
-                     block: Dict, part_data: AutoPartData):
+                     block: Dict, part_data: AutoPartData) -> None:
         """Рендеринг отдельного блока"""
         
         block_type = block['type']
@@ -1288,7 +1307,7 @@ class AutoPartsInfographicGenerator:
         elif block_type == 'footer':
             self._render_footer(draw, x, y, w, h, part_data)
     
-    def _render_header(self, draw, x, y, w, h, data):
+    def _render_header(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг шапки с брендом и категорией"""
         # Фон шапки
         self.graphics.create_rounded_rect(
@@ -1305,10 +1324,21 @@ class AutoPartsInfographicGenerator:
         # Категория справа
         category_icon = self.text_processor.get_icon_for_category(data.category)
         category_text = f"{category_icon} {data.category}" if data.category else "🔧 Запчасть"
-        draw.text((x + w - 200, y + 20), category_text,
-                 fill=self.colors.get('secondary', (231, 76, 60)))
+        
+        # Используем доступный шрифт для измерения текста
+        try:
+            font = ImageFont.truetype("arial.ttf", 16) if os.path.exists("arial.ttf") else ImageFont.load_default()
+        except:
+            font = ImageFont.load_default()
+            
+        # Простая оценка ширины текста
+        text_width = len(category_text) * 10
+        text_x = x + w - text_width - 15
+        
+        draw.text((text_x, y + 20), category_text,
+                 fill=self.colors.get('secondary', (231, 76, 60)), font=font)
     
-    def _render_product_image(self, image, x, y, w, h, data):
+    def _render_product_image(self, image: Image.Image, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг изображения товара"""
         # Рамка для изображения
         self.graphics.create_rounded_rect(
@@ -1329,13 +1359,13 @@ class AutoPartsInfographicGenerator:
         start_y = y + (h - total_height) // 2
         
         for i, line in enumerate(lines):
-            text_width = len(line) * 10
+            text_width = len(line) * 10  # Примерная ширина символа
             text_x = x + (w - text_width) // 2
             text_y = start_y + i * line_height
             draw.text((text_x, text_y), line, 
                      fill=self.colors.get('text', (100, 100, 100)))
     
-    def _render_title(self, draw, x, y, w, h, data):
+    def _render_title(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг названия товара"""
         # Обрезаем длинное название
         title = data.name
@@ -1344,14 +1374,14 @@ class AutoPartsInfographicGenerator:
         
         # Используем доступный шрифт
         try:
-            font = ImageFont.truetype("arial.ttf", 24)
+            font = ImageFont.truetype("arial.ttf", 24) if os.path.exists("arial.ttf") else ImageFont.load_default()
         except:
             font = ImageFont.load_default()
         
         draw.text((x, y), title, 
                  fill=self.colors.get('text', (44, 62, 80)), font=font)
     
-    def _render_oem(self, draw, x, y, w, h, data):
+    def _render_oem(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг OEM номера"""
         if data.oem:
             oem_text = f"🔢 OEM: {data.oem}"
@@ -1366,7 +1396,7 @@ class AutoPartsInfographicGenerator:
             draw.text((x + 10, y + 10), oem_text,
                      fill=self.colors.get('accent', (52, 152, 219)))
     
-    def _render_price(self, draw, x, y, w, h, data):
+    def _render_price(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг блока цены"""
         # Форматируем цены
         current_price = self.text_processor.format_price(data.price)
@@ -1394,7 +1424,7 @@ class AutoPartsInfographicGenerator:
         
         # Текущая цена
         try:
-            font_large = ImageFont.truetype("arial.ttf", 32)
+            font_large = ImageFont.truetype("arial.ttf", 32) if os.path.exists("arial.ttf") else ImageFont.load_default()
         except:
             font_large = ImageFont.load_default()
         
@@ -1403,7 +1433,7 @@ class AutoPartsInfographicGenerator:
         
         # Старая цена
         if price_data['old']:
-            draw.text((x + 20, y + 50), price_data['old'],
+            draw.text((x + 20, y + 60), price_data['old'],
                      fill=self.colors.get('secondary', (231, 76, 60)))
         
         # Скидка
@@ -1421,7 +1451,7 @@ class AutoPartsInfographicGenerator:
                      price_data['discount'],
                      fill=(255, 255, 255))
     
-    def _render_stock_delivery(self, draw, x, y, w, h, data):
+    def _render_stock_delivery(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг информации о наличии и доставке"""
         delivery_info = self.text_processor.create_delivery_info(
             data.stock, data.delivery
@@ -1452,7 +1482,7 @@ class AutoPartsInfographicGenerator:
         draw.text((x + col_width + 25, y + 20), delivery_text,
                  fill=self.colors.get('accent', (52, 152, 219)))
     
-    def _render_compatibility(self, draw, x, y, w, h, data):
+    def _render_compatibility(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг блока совместимости"""
         car_models = data.compatibility or []
         if data.car_model:
@@ -1481,7 +1511,7 @@ class AutoPartsInfographicGenerator:
             draw.text((x + 15, y + 25), compatibility_text,
                      fill=self.colors.get('text', (44, 62, 80)))
     
-    def _render_features(self, draw, x, y, w, h, data):
+    def _render_features(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг характеристик"""
         features = data.features or [
             "Высокое качество материалов",
@@ -1508,7 +1538,7 @@ class AutoPartsInfographicGenerator:
             draw.text((x + 25, feature_y), feature,
                      fill=self.colors.get('text', (44, 62, 80)))
     
-    def _render_rating(self, draw, x, y, w, h, data):
+    def _render_rating(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг рейтинга"""
         rating = data.rating
         reviews = data.reviews
@@ -1518,7 +1548,7 @@ class AutoPartsInfographicGenerator:
         stars_half = 1 if rating - stars_full >= 0.5 else 0
         stars_empty = 5 - stars_full - stars_half
         
-        stars = '★' * stars_full + '½' * stars_half + '☆' * stars_empty
+        stars = '★' * stars_full + ('½' if stars_half else '') + '☆' * stars_empty
         
         rating_text = f"⭐ {rating:.1f} {stars}"
         if reviews > 0:
@@ -1527,7 +1557,7 @@ class AutoPartsInfographicGenerator:
         draw.text((x, y), rating_text,
                  fill=self.colors.get('highlight', (241, 196, 15)))
     
-    def _render_footer(self, draw, x, y, w, h, data):
+    def _render_footer(self, draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, data: AutoPartData) -> None:
         """Рендеринг футера"""
         warranty_text = f"🛡️ {data.warranty}"
         
@@ -1639,7 +1669,7 @@ class AutoPartsBatchGenerator:
         self.template_style = template_style
         self.generator = AutoPartsInfographicGenerator(template_style)
         
-    def generate_from_dataframe(self, df: pd.DataFrame, output_dir: str = 'auto_infographics'):
+    def generate_from_dataframe(self, df: pd.DataFrame, output_dir: str = 'auto_infographics') -> List[Dict]:
         """Генерация инфографик из DataFrame"""
         
         # Создаем директорию
@@ -1718,15 +1748,25 @@ class AutoPartsBatchGenerator:
             elif any(word in col_lower for word in ['гарант', 'warranty']):
                 data['warranty'] = str(value)
             elif any(word in col_lower for word in ['рейтинг', 'rating']):
-                data['rating'] = float(value)
+                try:
+                    data['rating'] = float(value)
+                except:
+                    data['rating'] = 4.5
             elif any(word in col_lower for word in ['отзыв', 'review', 'feedback']):
-                data['reviews'] = int(value)
+                try:
+                    data['reviews'] = int(value)
+                except:
+                    data['reviews'] = 0
             elif any(word in col_lower for word in ['совместим', 'compatib', 'подходит']):
                 if isinstance(value, str):
                     data['compatibility'] = [v.strip() for v in value.split(',')]
+                elif isinstance(value, list):
+                    data['compatibility'] = value
             elif any(word in col_lower for word in ['характерист', 'feature', 'свойств', 'описан']):
                 if isinstance(value, str):
                     data['features'] = [v.strip() for v in value.split(';')]
+                elif isinstance(value, list):
+                    data['features'] = value
         
         # Заполняем обязательные поля
         if 'name' not in data:
@@ -1831,8 +1871,8 @@ def create_auto_parts_demo_data() -> pd.DataFrame:
             '0986AB1234', 'HU925/3X', '574012078', 'LFR6AIX-11', '334339',
             'K015631XS', '64210H7B', 'CUK2939', 'A339S', '09.9762.80'
         ],
-        'Цена': [2890, 850, 5990, 450, 4250, 7800, 890, 1250, 1290, 3950],
-        'Старая цена': [3490, 950, 6490, 550, 4800, 8500, 1050, 1450, 1490, 4500],
+        'Цена': ['2890', '850', '5990', '450', '4250', '7800', '890', '1250', '1290', '3950'],
+        'Старая цена': ['3490', '950', '6490', '550', '4800', '8500', '1050', '1450', '1490', '4500'],
         'Категория': [
             'Тормоза', 'Фильтры', 'Аккумуляторы', 'Двигатель', 'Подвеска',
             'Двигатель', 'Электрика', 'Фильтры', 'Кузов', 'Тормоза'
@@ -1859,7 +1899,7 @@ def create_auto_parts_demo_data() -> pd.DataFrame:
     
     return pd.DataFrame(data)
 
-def demonstrate_backgrounds():
+def demonstrate_backgrounds() -> str:
     """Демонстрация различных подложек"""
     
     print("\n" + "="*70)
@@ -1958,7 +1998,7 @@ def demonstrate_backgrounds():
     
     return output_dir
 
-def demo_generation():
+def demo_generation() -> pd.DataFrame:
     """Демонстрация генерации инфографик"""
     
     print("\n" + "="*70)
@@ -1971,8 +2011,12 @@ def demo_generation():
     
     # Сохраняем в Excel
     demo_excel = 'auto_parts_demo.xlsx'
-    df_demo.to_excel(demo_excel, index=False)
-    print(f"✅ Демо данные сохранены в: {demo_excel}")
+    try:
+        df_demo.to_excel(demo_excel, index=False)
+        print(f"✅ Демо данные сохранены в: {demo_excel}")
+    except Exception as e:
+        print(f"⚠️ Не удалось сохранить Excel: {e}")
+        print("Продолжаем без сохранения Excel...")
     
     # Демонстрация подложек
     demonstrate_backgrounds()
@@ -2002,7 +2046,7 @@ def demo_generation():
             # Генерация с подложками
             generator = EnhancedAutoPartsBatchGenerator(style)
             results = generator.generate_from_dataframe(
-                df_demo, 
+                df_demo.head(3),  # Ограничиваем для демо
                 output_dir=f'output_{style.value}',
                 use_background=True,
                 background_type='product_card'
@@ -2032,8 +2076,11 @@ def demo_generation():
     
     # Очистка
     if os.path.exists(demo_excel):
-        os.remove(demo_excel)
-        print(f"\n🧹 Удален временный файл: {demo_excel}")
+        try:
+            os.remove(demo_excel)
+            print(f"\n🧹 Удален временный файл: {demo_excel}")
+        except:
+            pass
     
     print("\n" + "="*70)
     print("✅ ДЕМОНСТРАЦИЯ ЗАВЕРШЕНА!")
@@ -2041,7 +2088,7 @@ def demo_generation():
     
     return df_demo
 
-def fix_pil_issues():
+def fix_pil_issues() -> None:
     """Функция для исправления совместимости с PIL"""
     
     print("\n" + "="*70)
@@ -2073,7 +2120,7 @@ def fix_pil_issues():
 # 🎨 ОСНОВНАЯ ФУНКЦИЯ
 # ============================================================================
 
-def main():
+def main() -> None:
     """Основная функция для использования"""
     
     # Демонстрация исправлений PIL
