@@ -1,5 +1,6 @@
 # ============================================================================
 # 🚗 AUTO-PARTS HYBRID INFOGRAPHIC GENERATOR v8.0 - Streamlit Version
+# Полный скрипт с исправлениями
 # ============================================================================
 
 import streamlit as st
@@ -20,6 +21,7 @@ import json
 import math
 import io
 import base64
+import sys
 
 warnings.filterwarnings('ignore')
 
@@ -169,7 +171,7 @@ class AutoTextProcessor:
             'фильтр': '🧹', 'масл': '🛢️', 'смазк': '🛢️',
             'аккумулятор': '🔋', 'батаре': '🔋',
             'шина': '🌀', 'колес': '🌀', 'резин': '🌀',
-            'фара': '💡', 'ламп': '💡', 'свет': '💡',
+            'фара': '💡', ' ламп': '💡', 'свет': '💡',
             'подвеск': '⚙️', 'амортизатор': '⚙️',
             'выхлоп': '📯', 'глушител': '📯',
             'охлажден': '❄️', 'радиатор': '❄️',
@@ -418,7 +420,7 @@ class AutoGraphicsGenerator:
                  fill=(255, 255, 255), font=font)
 
 # ============================================================================
-# 🎨 ГЕНЕРАТОР ПОДЛОЖЕК
+# 🎨 ГЕНЕРАТОР ПОДЛОЖЕК (ИСПРАВЛЕННЫЙ)
 # ============================================================================
 
 class AutoBackgroundGenerator:
@@ -744,7 +746,7 @@ class AutoBackgroundGenerator:
         self._draw_product_area(draw, width, height, style)
         
         if with_text_area:
-            self._draw_text_area(draw, width, height, style)
+            background = self._draw_text_area(draw, width, height, style, background)
         
         self._draw_corners(draw, width, height, style)
         
@@ -785,7 +787,8 @@ class AutoBackgroundGenerator:
             width=2
         )
     
-    def _draw_text_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> Image.Image:
+    def _draw_text_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str, background: Image.Image = None) -> Image.Image:
+        """Рисование области для текста"""
         text_area_height = 300
         
         if style == 'auto_tech':
@@ -799,16 +802,20 @@ class AutoBackgroundGenerator:
         background_area.paste(text_area, (0, height - text_area_height))
         
         # Накладываем на основной фон
-        temp_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        temp_img.paste(background, (0, 0))
+        if background is None:
+            temp_img = Image.new('RGBA', (width, height), (255, 255, 255, 255))
+        else:
+            temp_img = background.copy()
+        
         temp_img = Image.alpha_composite(temp_img, background_area)
         
-        draw = ImageDraw.Draw(temp_img)
+        # Создаем новый объект draw для temp_img
+        new_draw = ImageDraw.Draw(temp_img)
         
-        draw.line([(0, height - text_area_height), (width, height - text_area_height)],
-                 fill=(200, 200, 200, 150), width=1)
+        new_draw.line([(0, height - text_area_height), (width, height - text_area_height)],
+                     fill=(200, 200, 200, 150), width=1)
         
-        return temp_img.convert('RGB')
+        return temp_img
     
     def _draw_corners(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> None:
         corner_size = 20
@@ -830,7 +837,7 @@ class AutoBackgroundGenerator:
                  fill=corner_color, width=3)
 
 # ============================================================================
-# 🎯 ГИБРИДНЫЙ МЕНЕДЖЕР ШАБЛОНОВ
+# 🎯 ГИБРИДНЫЙ МЕНЕДЖЕР ШАБЛОНОВ (ИСПРАВЛЕННЫЙ)
 # ============================================================================
 
 class HybridTemplateManager:
@@ -847,8 +854,8 @@ class HybridTemplateManager:
         template_files = list(self.templates_dir.glob("*.png")) + list(self.templates_dir.glob("*.jpg"))
         
         if not template_files:
-            print(f"⚠️ В папке {self.templates_dir} нет шаблонов")
-            print("   Создаю базовые шаблоны...")
+            st.info(f"⚠️ В папке {self.templates_dir} нет шаблонов")
+            st.info("Создаю базовые шаблоны...")
             self._create_default_templates()
             template_files = list(self.templates_dir.glob("*.png"))
         
@@ -974,7 +981,10 @@ class HybridTemplateManager:
     
     def _wrap_text(self, text: str, max_chars: int) -> List[str]:
         """Перенос текста"""
-        words = text.split()
+        if not text:
+            return [""]
+        
+        words = str(text).split()
         lines = []
         current_line = []
         
@@ -982,7 +992,8 @@ class HybridTemplateManager:
             if len(' '.join(current_line + [word])) <= max_chars:
                 current_line.append(word)
             else:
-                lines.append(' '.join(current_line))
+                if current_line:
+                    lines.append(' '.join(current_line))
                 current_line = [word]
         
         if current_line:
@@ -1001,9 +1012,10 @@ class HybridTemplateManager:
             font = ImageFont.load_default()
         
         for feature in features[:5]:  # Ограничиваем 5 пунктами
-            bullet_text = f"• {feature}"
-            draw.text((x, y), bullet_text, fill=(50, 50, 50), font=font)
-            y += 30
+            if feature:
+                bullet_text = f"• {feature}"
+                draw.text((x, y), bullet_text, fill=(50, 50, 50), font=font)
+                y += 30
 
 # ============================================================================
 # 🎯 МОДУЛЬ РАБОТЫ С ВНЕШНИМИ ДАННЫМИ
@@ -1184,20 +1196,9 @@ class HybridInfographicGenerator:
                     # Полностью автоматический режим
                     output_file = output_path / f"auto_{product.get('oem', idx)}.png"
                     
-                    # Создаем AutoPartData для совместимости
-                    auto_part_data = AutoPartData(
-                        name=product['name'],
-                        price=product['price'],
-                        old_price=product.get('old_price'),
-                        brand=product['brand'],
-                        oem=product['oem'],
-                        category=product['category'],
-                        features=product['features']
-                    )
-                    
                     # Используем упрощенный генератор
                     simple_gen = SimpleAutoPartsGenerator()
-                    simple_gen.generate_simple_card(product, str(output_file))
+                    result_image = simple_gen.generate_simple_card(product, str(output_file))
                     print(f"  ✅ Автоматический режим: {output_file}")
                 
                 results.append({
@@ -1209,6 +1210,8 @@ class HybridInfographicGenerator:
                 
             except Exception as e:
                 print(f"  ❌ Ошибка: {e}")
+                import traceback
+                traceback.print_exc()
                 results.append({
                     'index': idx,
                     'error': str(e),
@@ -1358,11 +1361,11 @@ class ManualEditor:
         editable_data = []
         
         for idx, row in df.iterrows():
-            product_id = row.get('OEM') if 'OEM' in row.columns else f"product_{idx}"
+            product_id = row.get('OEM') if 'OEM' in row.index else f"product_{idx}"
             
             # Извлекаем характеристики
             features = []
-            if 'Характеристики' in row:
+            if 'Характеристики' in row.index:
                 features_text = str(row['Характеристики'])
                 if ';' in features_text:
                     features = [f.strip() for f in features_text.split(';') if f.strip()]
@@ -1371,7 +1374,7 @@ class ManualEditor:
             
             editable_data.append({
                 'product_id': product_id,
-                'original_title': row.get('Название', '') if 'Название' in row else row.get('name', ''),
+                'original_title': row.get('Название', '') if 'Название' in row.index else row.get('name', ''),
                 'edited_title': '',
                 'original_features': '; '.join(features),
                 'edited_features': '',
@@ -1511,7 +1514,7 @@ class SimpleAutoPartsGenerator:
         draw.text((x, y), price_text, fill=(231, 76, 60), font=font_large)
         
         # Старая цена (если есть)
-        if old_price:
+        if old_price and str(old_price).strip():
             old_price_text = f"{old_price} ₽"
             bbox = draw.textbbox((0, 0), old_price_text, font=font_small)
             text_width = bbox[2] - bbox[0]
@@ -1530,7 +1533,7 @@ class SimpleAutoPartsGenerator:
         
         y = height // 2 + 120
         
-        if brand:
+        if brand and str(brand).strip():
             brand_text = f"🏷️ {brand}"
             bbox = draw.textbbox((0, 0), brand_text, font=font)
             text_width = bbox[2] - bbox[0]
@@ -1538,7 +1541,7 @@ class SimpleAutoPartsGenerator:
             draw.text((x, y), brand_text, fill=(52, 152, 219), font=font)
             y += 40
         
-        if oem:
+        if oem and str(oem).strip():
             oem_text = f"🔢 OEM: {oem}"
             bbox = draw.textbbox((0, 0), oem_text, font=font)
             text_width = bbox[2] - bbox[0]
@@ -1556,9 +1559,10 @@ class SimpleAutoPartsGenerator:
         x = width // 4
         
         for feature in features[:5]:  # Ограничиваем 5 пунктами
-            feature_text = f"✓ {feature}"
-            draw.text((x, y), feature_text, fill=(50, 50, 50), font=font)
-            y += 35
+            if feature and str(feature).strip():
+                feature_text = f"✓ {feature}"
+                draw.text((x, y), feature_text, fill=(50, 50, 50), font=font)
+                y += 35
 
 # ============================================================================
 # 🎯 ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ STREAMLIT
@@ -1699,6 +1703,7 @@ def main():
                         Path(templates_dir).mkdir(exist_ok=True)
                         template.save(f"{templates_dir}/{s}_template.png")
                     st.success("Базовые шаблоны созданы!")
+                    st.rerun()
         
         st.markdown("---")
         st.header("📦 Экспорт")
@@ -1800,17 +1805,22 @@ def main():
                             st.markdown('<h3 class="sub-header">📸 Превью результатов</h3>', unsafe_allow_html=True)
                             
                             # Загружаем первые 3 изображения для показа
-                            output_files = list(Path(output_dir).glob("*.png"))
-                            if output_files:
-                                cols = st.columns(min(3, len(output_files)))
-                                for idx, file in enumerate(output_files[:3]):
-                                    with cols[idx]:
-                                        img = Image.open(file)
-                                        st.image(img, caption=file.name, use_column_width=True)
-                                        st.markdown(get_image_download_link(img, file.name, "📥 Скачать"), unsafe_allow_html=True)
+                            try:
+                                output_files = list(Path(output_dir).glob("*.png"))
+                                if output_files:
+                                    cols = st.columns(min(3, len(output_files)))
+                                    for idx, file in enumerate(output_files[:3]):
+                                        with cols[idx]:
+                                            img = Image.open(file)
+                                            st.image(img, caption=file.name, use_column_width=True)
+                                            st.markdown(get_image_download_link(img, file.name, "📥 Скачать"), unsafe_allow_html=True)
+                            except Exception as e:
+                                st.warning(f"Не удалось загрузить превью: {e}")
                             
                         except Exception as e:
                             st.error(f"Ошибка при генерации: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
     
     elif mode == "✏️ Ручное создание":
         st.markdown('<h2 class="sub-header">✏️ Создание инфографики вручную</h2>', unsafe_allow_html=True)
@@ -1855,13 +1865,13 @@ def main():
                             'brand': brand,
                             'oem': oem,
                             'category': category,
-                            'features': features
+                            'features': [f for f in features if f]
                         }
                         
                         # Выбираем генератор
-                        if use_templates:
+                        if use_templates and 'selected_template' in locals():
                             generator = HybridInfographicGenerator("templates")
-                            template_name = selected_template if 'selected_template' in locals() else 'default_template'
+                            template_name = selected_template
                             result_img = generator.generate_single(product_data, template_name)
                         else:
                             generator = SimpleAutoPartsGenerator(style)
@@ -1884,6 +1894,8 @@ def main():
                     
                     except Exception as e:
                         st.error(f"Ошибка при генерации: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
     
     elif mode == "🔄 Пакетная обработка":
         st.markdown('<h2 class="sub-header">📁 Пакетная обработка файлов</h2>', unsafe_allow_html=True)
@@ -1900,8 +1912,9 @@ def main():
             if st.button("🚀 Начать пакетную обработку", type="primary", use_container_width=True):
                 with st.spinner("Обрабатываю файлы..."):
                     all_results = []
+                    progress_bar = st.progress(0)
                     
-                    for uploaded_file in uploaded_files:
+                    for i, uploaded_file in enumerate(uploaded_files):
                         try:
                             file_path = save_uploaded_file(uploaded_file, "batch_uploads")
                             output_dir = f"batch_output_{uploaded_file.name.split('.')[0]}"
@@ -1921,15 +1934,21 @@ def main():
                                 'output_dir': output_dir
                             })
                             
+                            progress_bar.progress((i + 1) / len(uploaded_files))
+                            
                         except Exception as e:
                             st.error(f"Ошибка обработки {uploaded_file.name}: {e}")
+                            all_results.append({
+                                'file': uploaded_file.name,
+                                'error': str(e)
+                            })
                     
                     # Сводный отчет
                     st.markdown('<div class="success-box">📊 Сводный отчет по пакетной обработке</div>', unsafe_allow_html=True)
                     
                     total_files = len(all_results)
-                    total_products = sum(r.get('total', 0) for r in all_results)
-                    total_success = sum(r.get('success', 0) for r in all_results)
+                    total_products = sum(r.get('total', 0) for r in all_results if 'total' in r)
+                    total_success = sum(r.get('success', 0) for r in all_results if 'success' in r)
                     
                     col1, col2, col3 = st.columns(3)
                     col1.metric("📁 Файлов", total_files)
@@ -1938,7 +1957,8 @@ def main():
                     
                     st.markdown("**Папки с результатами:**")
                     for result in all_results:
-                        st.write(f"• **{result['output_dir']}/** - {result['file']} ({result['success']}/{result['total']})")
+                        if 'output_dir' in result:
+                            st.write(f"• **{result['output_dir']}/** - {result['file']} ({result['success']}/{result['total']})")
         
         else:
             st.info("Загрузите Excel файлы для пакетной обработки")
@@ -1986,10 +2006,28 @@ def main():
             col3.success("✅ openpyxl")
         except:
             col3.error("❌ openpyxl")
+        
+        # Кнопка для создания папок
+        if st.button("📁 Создать необходимые папки"):
+            folders = ["templates", "uploads", "output_infographics", "manual_output", "batch_outputs"]
+            for folder in folders:
+                Path(folder).mkdir(exist_ok=True)
+                st.success(f"Создана папка: {folder}")
 
 # ============================================================================
 # 🎯 ТОЧКА ВХОДА
 # ============================================================================
 
 if __name__ == "__main__":
-    main()
+    # Проверка необходимых библиотек
+    try:
+        import pandas as pd
+        from PIL import Image
+        import streamlit as st
+        
+        main()
+    except ImportError as e:
+        print(f"❌ Ошибка: {e}")
+        print("\n📦 Установите необходимые библиотеки:")
+        print("pip install streamlit pandas pillow openpyxl")
+        sys.exit(1)
