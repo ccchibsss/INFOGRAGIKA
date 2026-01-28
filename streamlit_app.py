@@ -3602,6 +3602,131 @@ class UIComponents:
             st.caption("Версия: 9.0 (с редактором шаблонов)")
     
     @staticmethod
+    def render_data_quality_tab():
+        """Вкладка анализа качества данных"""
+        if st.session_state.df is None:
+            st.info("📥 Загрузите Excel файл в боковой панели для начала работы")
+            return
+        
+        st.header("📊 Анализ качества данных")
+        
+        df = st.session_state.df
+        
+        # Статистика
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Всего строк", len(df))
+        
+        with col2:
+            st.metric("Всего колонок", len(df.columns))
+        
+        with col3:
+            non_empty = df.astype(bool).sum().sum()
+            total_cells = len(df) * len(df.columns)
+            fill_rate = (non_empty / total_cells * 100) if total_cells > 0 else 0
+            st.metric("Заполненность", f"{fill_rate:.1f}%")
+        
+        with col4:
+            duplicates = len(df) - len(df.drop_duplicates())
+            st.metric("Дубликаты", duplicates)
+        
+        # Анализ колонок
+        with st.expander("🔍 Детальный анализ колонок", expanded=True):
+            column_info = []
+            
+            for col in df.columns:
+                col_data = df[col].dropna()
+                
+                info = {
+                    'Колонка': col,
+                    'Тип': str(df[col].dtype),
+                    'Не пустых': len(col_data),
+                    'Уникальных': col_data.nunique(),
+                    'Заполненность (%)': f"{(len(col_data) / len(df) * 100):.1f}",
+                    'Пример': str(col_data.iloc[0])[:30] + "..." if len(col_data) > 0 else "Пусто"
+                }
+                column_info.append(info)
+            
+            column_df = pd.DataFrame(column_info)
+            st.dataframe(column_df, use_container_width=True)
+        
+        # Выявление потенциальных проблем
+        with st.expander("⚠️ Потенциальные проблемы", expanded=True):
+            problems = []
+            
+            # Проверка на полностью пустые колонки
+            for col in df.columns:
+                if df[col].isna().all() or (df[col].astype(str).str.strip() == '').all():
+                    problems.append(f"Колонка '{col}' полностью пустая")
+            
+            # Проверка на дубликаты в ключевых полях
+            for col in df.columns:
+                col_lower = str(col).lower()
+                if any(keyword in col_lower for keyword in ['id', 'sku', 'артикул', 'код']):
+                    if df[col].duplicated().any():
+                        problems.append(f"Колонка '{col}' содержит дубликаты")
+            
+            # Проверка на URL колонки
+            url_columns = []
+            for col in df.columns:
+                col_lower = str(col).lower()
+                if any(keyword in col_lower for keyword in ['url', 'link', 'image', 'фото']):
+                    url_columns.append(col)
+            
+            if not url_columns:
+                problems.append("Не найдены колонки с URL изображений")
+            
+            if problems:
+                for problem in problems:
+                    st.warning(problem)
+            else:
+                st.success("✅ Критических проблем не обнаружено")
+        
+        # Визуализация распределения данных
+        with st.expander("📈 Визуализация данных", expanded=False):
+            selected_column = st.selectbox(
+                "Выберите колонку для анализа",
+                df.columns.tolist(),
+                key="data_analysis_column"
+            )
+            
+            if selected_column:
+                col_data = df[selected_column].dropna()
+                
+                if len(col_data) > 0:
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Гистограмма для числовых данных
+                        try:
+                            numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
+                            if len(numeric_data) > 0:
+                                st.subheader("Распределение значений")
+                                st.bar_chart(numeric_data.value_counts().head(20))
+                        except:
+                            st.info("Не числовые данные для гистограммы")
+                    
+                    with col2:
+                        # Топ значений
+                        st.subheader("Топ 10 значений")
+                        top_values = col_data.value_counts().head(10)
+                        st.dataframe(top_values, use_container_width=True)
+        
+        # Рекомендации
+        with st.expander("💡 Рекомендации", expanded=False):
+            st.info("""
+            **Для лучших результатов:**
+            1. Убедитесь, что есть колонка с URL изображений
+            2. Проверьте, что нет полностью пустых колонок
+            3. Используйте первый столбец для имен файлов
+            4. Удалите дубликаты перед обработкой
+            """)
+            
+            if st.button("🔄 Обновить анализ", key="refresh_analysis"):
+                st.rerun()
+    
+    @staticmethod
     def render_column_mapping():
         """Настройка маппинга колонок"""
         if st.session_state.df is None:
@@ -4345,7 +4470,7 @@ class UIComponents:
                 if not os.access(st.session_state.local_save_path, os.W_OK):
                     st.error(f"❌ **Нет прав на запись в папку!** Выберите другую папку в настройках.")
             except:
-                st.warning("⚠️ Не удалось проверить права доступа к папке")
+                st.warning("⚠️ Не удалось проверить права доступа к папку")
         else:
             st.error("❌ **Не выбрана папка для сохранения!** Укажите путь в настройках.")
             return
@@ -4711,9 +4836,6 @@ def show_main_interface():
         "📈 Статистика",
         "🎨 Шаблоны"
     ]
-    
-    if st.session_state.get('template_editor_active', False):
-        tab_names.append("🔧 Редактор шаблонов")
     
     tabs = st.tabs(tab_names)
     
