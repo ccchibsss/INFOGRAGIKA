@@ -7,16 +7,13 @@ scipy==1.11.0
 matplotlib==3.5.3
 numpy==1.24.3
 
+# Совместимый диапазон rich для streamlit 1.28.0
+rich>=10.14.0,<14
+
 # Дополнительные библиотеки
 fonttools==4.61.1
 kiwisolver==1.4.9
 packaging==26.0
 pygments==2.19.2
-rich==14.3.1
 markdown-it-py==4.0.0
 mdurl==0.1.2
-
-# Для обхода ошибок сборки numpy и pandas (используйте только бинарные wheel-файлы)
-# Можно добавить опцию --only-binary для этих пакетов
-# Например:
-# --only-binary=:all:
