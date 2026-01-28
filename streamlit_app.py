@@ -1,8 +1,8 @@
 # ============================================================================
-# 🚗 AUTO-PARTS HYBRID INFOGRAPHIC GENERATOR v8.0
-# Полный скрипт с гибридным подходом и исправлениями PIL
+# 🚗 AUTO-PARTS HYBRID INFOGRAPHIC GENERATOR v8.0 - Streamlit Version
 # ============================================================================
 
+import streamlit as st
 import pandas as pd
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
@@ -18,6 +18,8 @@ from enum import Enum
 from dataclasses import dataclass
 import json
 import math
+import io
+import base64
 
 warnings.filterwarnings('ignore')
 
@@ -289,7 +291,7 @@ class AutoTextProcessor:
         return '✅'
 
 # ============================================================================
-# 🎨 УЛУЧШЕННЫЙ ГРАФИЧЕСКИЙ ГЕНЕРАТОР (ИСПРАВЛЕННЫЙ)
+# 🎨 УЛУЧШЕННЫЙ ГРАФИЧЕСКИЙ ГЕНЕРАТОР
 # ============================================================================
 
 class AutoGraphicsGenerator:
@@ -783,7 +785,7 @@ class AutoBackgroundGenerator:
             width=2
         )
     
-    def _draw_text_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> None:
+    def _draw_text_area(self, draw: ImageDraw.ImageDraw, width: int, height: int, style: str) -> Image.Image:
         text_area_height = 300
         
         if style == 'auto_tech':
@@ -1128,8 +1130,26 @@ class HybridInfographicGenerator:
     def __init__(self, templates_dir: str = "templates"):
         self.template_manager = HybridTemplateManager(templates_dir)
         self.data_bridge = DataBridge()
-        self.auto_generator = None  # Инициализируем при необходимости
         self.text_processor = AutoTextProcessor()
+    
+    def generate_single(self, product_data: Dict, template_name: str = None) -> Image.Image:
+        """Генерация одной инфографики"""
+        if not template_name:
+            template_name = self._select_template(product_data)
+        
+        user_texts = {
+            'title': self._optimize_title(product_data['name'], product_data.get('category', '')),
+            'features': product_data.get('features', [])
+        }
+        
+        result_image = self.template_manager.apply_template(
+            template_name, product_data, user_texts
+        )
+        
+        # Добавление автоматически сгенерированных элементов
+        result_image = self._enhance_with_auto_elements(result_image, product_data)
+        
+        return result_image
     
     def generate_from_excel(self, excel_path: str, output_dir: str = "hybrid_output", 
                            use_templates: bool = True, manual_texts_path: str = None):
@@ -1155,29 +1175,13 @@ class HybridInfographicGenerator:
                     template_name = self._select_template(product)
                     output_file = output_path / f"template_{product.get('oem', idx)}_{template_name}.png"
                     
-                    # Применение шаблона
-                    user_texts = {
-                        'title': self._optimize_title(product['name'], product['category']),
-                        'features': product['features']
-                    }
-                    
-                    result_image = self.template_manager.apply_template(
-                        template_name, product, user_texts
-                    )
-                    
-                    # Добавление автоматически сгенерированных элементов
-                    result_image = self._enhance_with_auto_elements(result_image, product)
-                    
+                    result_image = self.generate_single(product, template_name)
                     result_image.save(str(output_file), 'PNG', quality=95)
                     
                     print(f"  ✅ Шаблонный режим: {output_file}")
                     
                 else:
-                    # Полностью автоматический режим (если нужен)
-                    if self.auto_generator is None:
-                        from . import EnhancedAutoPartsGenerator, TemplateStyle
-                        self.auto_generator = EnhancedAutoPartsGenerator(TemplateStyle.AUTO_MODERN)
-                    
+                    # Полностью автоматический режим
                     output_file = output_path / f"auto_{product.get('oem', idx)}.png"
                     
                     # Создаем AutoPartData для совместимости
@@ -1191,9 +1195,9 @@ class HybridInfographicGenerator:
                         features=product['features']
                     )
                     
-                    self.auto_generator.generate_with_background(
-                        auto_part_data, str(output_file), 'product_card'
-                    )
+                    # Используем упрощенный генератор
+                    simple_gen = SimpleAutoPartsGenerator()
+                    simple_gen.generate_simple_card(product, str(output_file))
                     print(f"  ✅ Автоматический режим: {output_file}")
                 
                 results.append({
@@ -1348,19 +1352,13 @@ class ManualEditor:
     """Интерфейс для ручного редактирования текстов перед генерацией"""
     
     @staticmethod
-    def create_editable_csv(excel_path: str, output_csv: str = "texts_to_edit.csv"):
+    def create_editable_csv(df: pd.DataFrame, output_csv: str = "texts_to_edit.csv"):
         """Создание CSV файла для ручного редактирования текстов"""
-        try:
-            df = pd.read_excel(excel_path)
-        except:
-            print("❌ Не удалось прочитать Excel файл")
-            return None
-        
         # Создаем структуру для редактирования
         editable_data = []
         
         for idx, row in df.iterrows():
-            product_id = row.get('OEM') if 'OEM' in row else f"product_{idx}"
+            product_id = row.get('OEM') if 'OEM' in row.columns else f"product_{idx}"
             
             # Извлекаем характеристики
             features = []
@@ -1382,10 +1380,6 @@ class ManualEditor:
         
         editable_df = pd.DataFrame(editable_data)
         editable_df.to_csv(output_csv, index=False, encoding='utf-8')
-        
-        print(f"📝 Файл для редактирования создан: {output_csv}")
-        print("✏️ Отредактируйте столбцы 'edited_title' и 'edited_features'")
-        print("💾 Сохраните файл и запустите генерацию снова")
         
         return output_csv
     
@@ -1418,7 +1412,6 @@ class ManualEditor:
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(manual_texts, f, ensure_ascii=False, indent=2)
         
-        print(f"📋 JSON с ручными правками создан: {json_path}")
         return json_path
 
 # ============================================================================
@@ -1433,7 +1426,7 @@ class SimpleAutoPartsGenerator:
         self.text_processor = AutoTextProcessor()
         self.graphics = AutoGraphicsGenerator()
         
-    def generate_simple_card(self, part_data: Dict, output_path: str) -> str:
+    def generate_simple_card(self, part_data: Dict, output_path: str = None) -> Image.Image:
         """Создание простой карточки товара"""
         width, height = 800, 1200
         
@@ -1460,9 +1453,11 @@ class SimpleAutoPartsGenerator:
         features = part_data.get('features', [])
         self._draw_features(draw, features, width, height)
         
-        # Сохраняем
-        image.save(output_path, 'PNG', quality=95)
-        return output_path
+        # Сохраняем если указан путь
+        if output_path:
+            image.save(output_path, 'PNG', quality=95)
+        
+        return image
     
     def _draw_title(self, draw, title: str, width: int, height: int):
         """Рисование заголовка"""
@@ -1566,69 +1561,11 @@ class SimpleAutoPartsGenerator:
             y += 35
 
 # ============================================================================
-# 🎯 ГЛАВНОЕ МЕНЮ С ГИБРИДНЫМ ПОДХОДОМ
+# 🎯 ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ STREAMLIT
 # ============================================================================
 
-def main_menu_hybrid():
-    """Главное меню с гибридным подходом"""
-    
-    print("\n" + "="*80)
-    print("🚗 AUTO-PARTS HYBRID INFOGRAPHIC GENERATOR v8.0")
-    print("="*80)
-    print("🎯 ГИБРИДНЫЙ ПОДХОД: Шаблоны + Автоматическая сборка")
-    print("✨ Особенности:")
-    print("   • Использование готовых графических шаблонов")
-    print("   • Автоматическое заполнение из Excel")
-    print("   • Ручное редактирование текстов при необходимости")
-    print("   • Простая настройка и использование")
-    
-    while True:
-        print("\n" + "="*60)
-        print("📋 ГЛАВНОЕ МЕНЮ")
-        print("="*60)
-        print("1. 🚀 Быстрый старт (создать демо данные и запустить)")
-        print("2. 📊 Обработать Excel файл с автозапчастями")
-        print("3. 🎨 Использовать графические шаблоны")
-        print("4. ✏️ Ручное редактирование текстов")
-        print("5. 📁 Пакетная обработка всех файлов в папке")
-        print("6. 🛠️ Настройки и конфигурация")
-        print("0. ❌ Выход")
-        
-        choice = input("\nВыберите действие (0-6): ").strip()
-        
-        if choice == "1":
-            quick_start()
-        
-        elif choice == "2":
-            process_excel_file()
-        
-        elif choice == "3":
-            use_templates()
-        
-        elif choice == "4":
-            manual_editing()
-        
-        elif choice == "5":
-            batch_processing()
-        
-        elif choice == "6":
-            configuration()
-        
-        elif choice == "0":
-            print("\n👋 До свидания!")
-            break
-        
-        else:
-            print("❌ Неверный выбор. Попробуйте снова.")
-
-def quick_start():
-    """Быстрый старт для новых пользователей"""
-    print("\n" + "="*60)
-    print("🚀 БЫСТРЫЙ СТАРТ")
-    print("="*60)
-    
-    # 1. Создаем демо Excel файл
-    print("\n1. 📊 Создаю демо данные...")
+def create_demo_data():
+    """Создание демо данных"""
     demo_data = {
         'Название': [
             'Тормозные колодки передние дисковые Brembo',
@@ -1636,6 +1573,7 @@ def quick_start():
             'Аккумулятор Varta Silver Dynamic 60Ah'
         ],
         'Цена': ['2890', '850', '5990'],
+        'Старая цена': ['3290', '', '6500'],
         'Бренд': ['Brembo', 'Mann', 'Varta'],
         'OEM': ['09.9762.80', 'HU925/3X', '574012078'],
         'Категория': ['Тормоза', 'Фильтры', 'Аккумуляторы'],
@@ -1643,457 +1581,415 @@ def quick_start():
             'Керамический состав; Уменьшенная пыльность; Долгий срок службы',
             'Высокая фильтрация; Прочный корпус; Легкая установка',
             'Технология AGM; Не требует обслуживания; Пусковой ток 540А'
-        ]
+        ],
+        'Наличие': ['В наличии', 'Под заказ', 'В наличии'],
+        'Доставка': ['1-2 дня', '3-5 дней', '1 день']
     }
     
-    demo_df = pd.DataFrame(demo_data)
-    demo_excel = "demo_auto_parts.xlsx"
-    demo_df.to_excel(demo_excel, index=False)
-    print(f"   ✅ Создан файл: {demo_excel}")
-    
-    # 2. Создаем папку для шаблонов если её нет
-    templates_dir = Path("templates")
-    templates_dir.mkdir(exist_ok=True)
-    
-    # 3. Запускаем обработку
-    print("\n2. 🎨 Запускаю обработку...")
-    
-    try:
-        generator = HybridInfographicGenerator(str(templates_dir))
-        results = generator.generate_from_excel(
-            demo_excel,
-            output_dir="quick_start_output",
-            use_templates=True
-        )
-        
-        success_count = sum(1 for r in results if r['success'])
-        print(f"\n✅ Успешно создано: {success_count} инфографик")
-        print("📁 Результаты сохранены в папке: quick_start_output/")
-        
-        # Показываем примеры
-        print("\n📸 Примеры созданных файлов:")
-        output_files = list(Path("quick_start_output").glob("*.png"))
-        for file in output_files[:3]:  # Показываем первые 3 файла
-            print(f"   • {file.name}")
-        
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-    
-    print("\n🎯 Что дальше?")
-    print("   1. Откройте папку 'quick_start_output' чтобы увидеть результаты")
-    print("   2. Используйте свои данные в Excel файле")
-    print("   3. Добавьте свои шаблоны в папку 'templates'")
+    return pd.DataFrame(demo_data)
 
-def process_excel_file():
-    """Обработка Excel файла с автозапчастями"""
-    print("\n" + "="*60)
-    print("📊 ОБРАБОТКА EXCEL ФАЙЛА")
-    print("="*60)
-    
-    # Поиск Excel файлов
-    excel_files = list(Path(".").glob("*.xlsx")) + list(Path(".").glob("*.xls"))
-    
-    if not excel_files:
-        print("❌ Excel файлы не найдены в текущей папке")
-        print("   Создайте файл с данными или используйте быстрый старт")
-        return
-    
-    print("\n📁 Найденные Excel файлы:")
-    for i, file in enumerate(excel_files[:5], 1):
-        print(f"{i}. {file.name}")
-    
-    if len(excel_files) > 1:
-        file_choice = input(f"\nВыберите файл (1-{min(5, len(excel_files))}): ").strip()
-        try:
-            selected_file = excel_files[int(file_choice) - 1]
-        except:
-            selected_file = excel_files[0]
-    else:
-        selected_file = excel_files[0]
-    
-    print(f"\n📊 Выбран файл: {selected_file.name}")
-    
-    # Выбор режима
-    print("\n🎯 ВЫБЕРИТЕ РЕЖИМ ГЕНЕРАЦИИ:")
-    print("1. 🎨 Использовать графические шаблоны (рекомендуется)")
-    print("2. ⚡ Быстрая автоматическая генерация")
-    print("3. ✏️ Сначала отредактировать тексты")
-    
-    mode_choice = input("\nВыберите режим (1-3): ").strip()
-    
-    templates_dir = Path("templates")
-    generator = HybridInfographicGenerator(str(templates_dir))
-    
-    if mode_choice == "1":
-        # Режим с шаблонами
-        output_dir = input("Введите имя папки для результатов [output_templates]: ").strip()
-        if not output_dir:
-            output_dir = "output_templates"
-        
-        results = generator.generate_from_excel(
-            str(selected_file),
-            output_dir=output_dir,
-            use_templates=True
-        )
-        
-    elif mode_choice == "2":
-        # Быстрая автоматическая генерация
-        output_dir = input("Введите имя папки для результатов [output_auto]: ").strip()
-        if not output_dir:
-            output_dir = "output_auto"
-        
-        results = generator.generate_from_excel(
-            str(selected_file),
-            output_dir=output_dir,
-            use_templates=False
-        )
-        
-    elif mode_choice == "3":
-        # Сначала редактирование
-        print("\n✏️ РЕДАКТИРОВАНИЕ ТЕКСТОВ")
-        print("="*40)
-        
-        csv_file = ManualEditor.create_editable_csv(str(selected_file))
-        if not csv_file:
-            return
-        
-        input("\n📝 Отредактируйте файл и нажмите Enter для продолжения...")
-        
-        json_file = ManualEditor.convert_csv_to_json(csv_file)
-        
-        output_dir = input("Введите имя папки для результатов [output_manual]: ").strip()
-        if not output_dir:
-            output_dir = "output_manual"
-        
-        results = generator.generate_from_excel(
-            str(selected_file),
-            output_dir=output_dir,
-            use_templates=True,
-            manual_texts_path=json_file
-        )
-    
-    else:
-        print("❌ Неверный выбор")
-        return
-    
-    # Показываем результаты
-    success_count = sum(1 for r in results if r['success'])
-    print(f"\n{'='*40}")
-    print(f"📊 РЕЗУЛЬТАТЫ:")
-    print(f"✅ Успешно: {success_count}")
-    print(f"❌ Ошибок: {len(results) - success_count}")
-    print(f"📁 Папка с результатами: {output_dir}/")
+def get_image_download_link(img: Image.Image, filename: str = "infographic.png", caption: str = "Скачать изображение"):
+    """Генерация ссылки для скачивания изображения"""
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    href = f'<a href="data:file/png;base64,{img_str}" download="{filename}">{caption}</a>'
+    return href
 
-def use_templates():
-    """Работа с графическими шаблонами"""
-    print("\n" + "="*60)
-    print("🎨 РАБОТА С ГРАФИЧЕСКИМИ ШАБЛОНАМИ")
-    print("="*60)
+def save_uploaded_file(uploaded_file, folder: str = "uploads"):
+    """Сохранение загруженного файла"""
+    os.makedirs(folder, exist_ok=True)
+    file_path = os.path.join(folder, uploaded_file.name)
     
-    templates_dir = Path("templates")
-    templates_dir.mkdir(exist_ok=True)
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
     
-    # Проверяем существующие шаблоны
-    template_files = list(templates_dir.glob("*.png")) + list(templates_dir.glob("*.jpg"))
+    return file_path
+
+# ============================================================================
+# 🎯 STREAMLIT ИНТЕРФЕЙС
+# ============================================================================
+
+def main():
+    st.set_page_config(
+        page_title="Auto-Parts Infographic Generator",
+        page_icon="🚗",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    if template_files:
-        print(f"\n📁 Найдено шаблонов: {len(template_files)}")
-        for i, file in enumerate(template_files[:10], 1):
-            print(f"{i}. {file.name}")
-    else:
-        print("\n📁 Шаблоны не найдены")
-        print("   Создаю базовые шаблоны...")
+    # Стили CSS
+    st.markdown("""
+    <style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .sub-header {
+        font-size: 1.5rem;
+        color: #3498db;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+    }
+    .info-box {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #3498db;
+        margin-bottom: 1rem;
+    }
+    .success-box {
+        background-color: #d4edda;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #28a745;
+        margin-bottom: 1rem;
+    }
+    .product-card {
+        background-color: white;
+        padding: 1rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Заголовок
+    st.markdown('<h1 class="main-header">🚗 Auto-Parts Hybrid Infographic Generator v8.0</h1>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">🎯 Гибридный подход: Шаблоны + Автоматическая сборка. Создавайте профессиональные инфографики для автозапчастей за секунды!</div>', unsafe_allow_html=True)
+    
+    # Сайдбар
+    with st.sidebar:
+        st.header("⚙️ Настройки")
         
-        bg_generator = AutoBackgroundGenerator()
+        mode = st.radio(
+            "Режим работы:",
+            ["📁 Обработка Excel файла", "✏️ Ручное создание", "🔄 Пакетная обработка"]
+        )
         
-        # Создаем несколько шаблонов
-        styles = ['auto_modern', 'auto_pro', 'auto_premium', 'auto_tech']
-        for style in styles:
-            template = bg_generator.create_product_card_background(
-                size=(800, 1200), style=style
-            )
-            template.save(templates_dir / f"{style}_template.png")
-            print(f"   ✅ Создан шаблон: {style}_template.png")
-    
-    print("\n🎯 ДЕЙСТВИЯ С ШАБЛОНАМИ:")
-    print("1. 📤 Добавить свои шаблоны (поместите PNG/JPG в папку templates/)")
-    print("2. 👀 Просмотреть существующие шаблоны")
-    print("3. 🗑️ Очистить папку с шаблонами")
-    print("0. ↩️ Назад")
-    
-    choice = input("\nВыберите действие: ").strip()
-    
-    if choice == "1":
-        print(f"\n📁 Добавьте свои PNG/JPG файлы в папку: {templates_dir.absolute()}")
-        print("   Размеры рекомендуется: 800x1200 пикселей")
-        print("   Области для текста будут определены автоматически")
+        st.markdown("---")
+        st.header("🎨 Стиль инфографики")
         
-    elif choice == "2":
-        if template_files:
-            print("\n👀 ПРОСМОТР ШАБЛОНОВ:")
-            for file in template_files[:5]:
+        style = st.selectbox(
+            "Выберите стиль:",
+            ["auto_modern", "auto_pro", "auto_premium", "auto_tech", "auto_luxury"]
+        )
+        
+        use_templates = st.checkbox("Использовать графические шаблоны", value=True)
+        
+        if use_templates:
+            templates_dir = "templates"
+            template_files = list(Path(templates_dir).glob("*.png")) + list(Path(templates_dir).glob("*.jpg"))
+            
+            if template_files:
+                template_names = [f.stem for f in template_files]
+                selected_template = st.selectbox("Выберите шаблон:", template_names)
+            else:
+                st.warning("Шаблоны не найдены. Создайте базовые шаблоны.")
+                if st.button("Создать базовые шаблоны"):
+                    bg_generator = AutoBackgroundGenerator()
+                    styles = ['auto_modern', 'auto_pro', 'auto_premium', 'auto_tech']
+                    for s in styles:
+                        template = bg_generator.create_product_card_background(
+                            size=(800, 1200), style=s
+                        )
+                        Path(templates_dir).mkdir(exist_ok=True)
+                        template.save(f"{templates_dir}/{s}_template.png")
+                    st.success("Базовые шаблоны созданы!")
+        
+        st.markdown("---")
+        st.header("📦 Экспорт")
+        
+        export_format = st.radio(
+            "Формат экспорта:",
+            ["PNG (рекомендуется)", "JPG"]
+        )
+        
+        export_quality = st.slider("Качество изображения:", 50, 100, 95)
+    
+    # Основной контент
+    if mode == "📁 Обработка Excel файла":
+        st.markdown('<h2 class="sub-header">📊 Загрузка Excel файла</h2>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            uploaded_file = st.file_uploader("Загрузите Excel файл с данными", type=['xlsx', 'xls'])
+            
+            if uploaded_file:
+                file_path = save_uploaded_file(uploaded_file)
+                st.success(f"Файл загружен: {uploaded_file.name}")
+                
+                # Чтение данных
                 try:
-                    img = Image.open(file)
-                    print(f"\n📄 {file.name}:")
-                    print(f"   Размер: {img.size}")
-                    print(f"   Формат: {img.format}")
-                    print(f"   Режим: {img.mode}")
-                except:
-                    print(f"❌ Не удалось открыть: {file.name}")
+                    df = pd.read_excel(file_path)
+                    st.dataframe(df.head(), use_container_width=True)
+                    
+                    # Показываем статистику
+                    st.info(f"Загружено {len(df)} товаров")
+                    
+                except Exception as e:
+                    st.error(f"Ошибка чтения файла: {e}")
+                    st.info("Используем демо данные")
+                    df = create_demo_data()
+                    st.dataframe(df, use_container_width=True)
+            else:
+                st.info("Загрузите Excel файл или используйте демо данные")
+                if st.button("Использовать демо данные"):
+                    df = create_demo_data()
+                    st.dataframe(df, use_container_width=True)
+        
+        with col2:
+            if 'df' in locals():
+                st.markdown('<h3 class="sub-header">⚙️ Настройка обработки</h3>', unsafe_allow_html=True)
+                
+                # Выбор режима обработки
+                processing_mode = st.radio(
+                    "Режим обработки:",
+                    ["🎨 Использовать шаблоны", "⚡ Быстрая генерация", "✏️ Ручное редактирование текстов"]
+                )
+                
+                output_dir = st.text_input("Папка для результатов:", value="output_infographics")
+                
+                if st.button("🚀 Начать генерацию", type="primary", use_container_width=True):
+                    with st.spinner("Генерация инфографик..."):
+                        try:
+                            generator = HybridInfographicGenerator("templates")
+                            
+                            if processing_mode == "✏️ Ручное редактирование текстов":
+                                # Создаем CSV для редактирования
+                                csv_file = "editable_texts.csv"
+                                ManualEditor.create_editable_csv(df, csv_file)
+                                
+                                st.download_button(
+                                    label="📥 Скачать CSV для редактирования",
+                                    data=pd.read_csv(csv_file).to_csv(index=False).encode('utf-8'),
+                                    file_name="editable_texts.csv",
+                                    mime="text/csv"
+                                )
+                                
+                                st.info("Отредактируйте CSV файл и загрузите его обратно")
+                                edited_csv = st.file_uploader("Загрузите отредактированный CSV", type=['csv'])
+                                
+                                if edited_csv:
+                                    edited_path = save_uploaded_file(edited_csv, "edited")
+                                    json_file = ManualEditor.convert_csv_to_json(edited_path)
+                                    
+                                    results = generator.generate_from_excel(
+                                        file_path,
+                                        output_dir=output_dir,
+                                        use_templates=(processing_mode != "⚡ Быстрая генерация"),
+                                        manual_texts_path=json_file
+                                    )
+                            else:
+                                results = generator.generate_from_excel(
+                                    file_path,
+                                    output_dir=output_dir,
+                                    use_templates=(processing_mode != "⚡ Быстрая генерация")
+                                )
+                            
+                            # Показываем результаты
+                            success_count = sum(1 for r in results if r['success'])
+                            st.success(f"✅ Успешно создано: {success_count} инфографик")
+                            st.info(f"📁 Результаты сохранены в папке: {output_dir}/")
+                            
+                            # Показываем превью
+                            st.markdown('<h3 class="sub-header">📸 Превью результатов</h3>', unsafe_allow_html=True)
+                            
+                            # Загружаем первые 3 изображения для показа
+                            output_files = list(Path(output_dir).glob("*.png"))
+                            if output_files:
+                                cols = st.columns(min(3, len(output_files)))
+                                for idx, file in enumerate(output_files[:3]):
+                                    with cols[idx]:
+                                        img = Image.open(file)
+                                        st.image(img, caption=file.name, use_column_width=True)
+                                        st.markdown(get_image_download_link(img, file.name, "📥 Скачать"), unsafe_allow_html=True)
+                            
+                        except Exception as e:
+                            st.error(f"Ошибка при генерации: {e}")
+    
+    elif mode == "✏️ Ручное создание":
+        st.markdown('<h2 class="sub-header">✏️ Создание инфографики вручную</h2>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown('<div class="product-card">', unsafe_allow_html=True)
+            
+            # Поля для ввода данных
+            product_name = st.text_input("Название товара:", value="Тормозные колодки передние")
+            
+            col_price1, col_price2 = st.columns(2)
+            with col_price1:
+                price = st.text_input("Цена:", value="2890")
+            with col_price2:
+                old_price = st.text_input("Старая цена (опционально):", value="3290")
+            
+            brand = st.text_input("Бренд:", value="Brembo")
+            oem = st.text_input("OEM номер:", value="09.9762.80")
+            category = st.selectbox("Категория:", list(AUTO_CATEGORIES.keys()))
+            
+            # Характеристики
+            st.markdown("**Характеристики:**")
+            features = []
+            for i in range(5):
+                feature = st.text_input(f"Характеристика {i+1}:", value=["Керамический состав", "Уменьшенная пыльность", "Долгий срок службы", "", ""][i])
+                if feature:
+                    features.append(feature)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            if st.button("🔄 Сгенерировать инфографику", type="primary", use_container_width=True):
+                with st.spinner("Создаю инфографику..."):
+                    try:
+                        # Создаем данные продукта
+                        product_data = {
+                            'name': product_name,
+                            'price': price,
+                            'old_price': old_price if old_price else None,
+                            'brand': brand,
+                            'oem': oem,
+                            'category': category,
+                            'features': features
+                        }
+                        
+                        # Выбираем генератор
+                        if use_templates:
+                            generator = HybridInfographicGenerator("templates")
+                            template_name = selected_template if 'selected_template' in locals() else 'default_template'
+                            result_img = generator.generate_single(product_data, template_name)
+                        else:
+                            generator = SimpleAutoPartsGenerator(style)
+                            result_img = generator.generate_simple_card(product_data)
+                        
+                        # Показываем результат
+                        st.markdown('<div class="success-box">✅ Инфографика создана!</div>', unsafe_allow_html=True)
+                        st.image(result_img, use_column_width=True)
+                        
+                        # Кнопка скачивания
+                        st.markdown(get_image_download_link(result_img, f"infographic_{oem}.png", "📥 Скачать инфографику"), unsafe_allow_html=True)
+                        
+                        # Сохранение
+                        if st.button("💾 Сохранить в папку"):
+                            output_dir = "manual_output"
+                            Path(output_dir).mkdir(exist_ok=True)
+                            output_path = f"{output_dir}/{product_name[:20]}_{oem}.png"
+                            result_img.save(output_path, "PNG", quality=export_quality)
+                            st.success(f"Сохранено: {output_path}")
+                    
+                    except Exception as e:
+                        st.error(f"Ошибка при генерации: {e}")
+    
+    elif mode == "🔄 Пакетная обработка":
+        st.markdown('<h2 class="sub-header">📁 Пакетная обработка файлов</h2>', unsafe_allow_html=True)
+        
+        uploaded_files = st.file_uploader(
+            "Загрузите несколько Excel файлов",
+            type=['xlsx', 'xls'],
+            accept_multiple_files=True
+        )
+        
+        if uploaded_files:
+            st.success(f"Загружено файлов: {len(uploaded_files)}")
+            
+            if st.button("🚀 Начать пакетную обработку", type="primary", use_container_width=True):
+                with st.spinner("Обрабатываю файлы..."):
+                    all_results = []
+                    
+                    for uploaded_file in uploaded_files:
+                        try:
+                            file_path = save_uploaded_file(uploaded_file, "batch_uploads")
+                            output_dir = f"batch_output_{uploaded_file.name.split('.')[0]}"
+                            
+                            generator = HybridInfographicGenerator("templates")
+                            results = generator.generate_from_excel(
+                                file_path,
+                                output_dir=output_dir,
+                                use_templates=use_templates
+                            )
+                            
+                            success_count = sum(1 for r in results if r['success'])
+                            all_results.append({
+                                'file': uploaded_file.name,
+                                'total': len(results),
+                                'success': success_count,
+                                'output_dir': output_dir
+                            })
+                            
+                        except Exception as e:
+                            st.error(f"Ошибка обработки {uploaded_file.name}: {e}")
+                    
+                    # Сводный отчет
+                    st.markdown('<div class="success-box">📊 Сводный отчет по пакетной обработке</div>', unsafe_allow_html=True)
+                    
+                    total_files = len(all_results)
+                    total_products = sum(r.get('total', 0) for r in all_results)
+                    total_success = sum(r.get('success', 0) for r in all_results)
+                    
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("📁 Файлов", total_files)
+                    col2.metric("📊 Товаров", total_products)
+                    col3.metric("✅ Успешно", total_success)
+                    
+                    st.markdown("**Папки с результатами:**")
+                    for result in all_results:
+                        st.write(f"• **{result['output_dir']}/** - {result['file']} ({result['success']}/{result['total']})")
+        
         else:
-            print("❌ Шаблоны не найдены")
+            st.info("Загрузите Excel файлы для пакетной обработки")
     
-    elif choice == "3":
-        confirm = input("\n⚠️ Вы уверены что хотите удалить все шаблоны? (y/n): ").strip().lower()
-        if confirm == 'y':
-            for file in template_files:
-                try:
-                    file.unlink()
-                    print(f"🗑️ Удален: {file.name}")
-                except:
-                    print(f"❌ Не удалось удалить: {file.name}")
-
-def manual_editing():
-    """Ручное редактирование текстов"""
-    print("\n" + "="*60)
-    print("✏️ РУЧНОЕ РЕДАКТИРОВАНИЕ ТЕКСТОВ")
-    print("="*60)
-    
-    # Поиск Excel файлов
-    excel_files = list(Path(".").glob("*.xlsx")) + list(Path(".").glob("*.xls"))
-    
-    if not excel_files:
-        print("❌ Excel файлы не найдены")
-        print("   Сначала создайте Excel файл с данными")
-        return
-    
-    print("\n📁 Выберите Excel файл для редактирования:")
-    for i, file in enumerate(excel_files[:5], 1):
-        print(f"{i}. {file.name}")
-    
-    if len(excel_files) > 1:
-        file_choice = input(f"\nВыберите файл (1-{min(5, len(excel_files))}): ").strip()
-        try:
-            selected_file = excel_files[int(file_choice) - 1]
-        except:
-            selected_file = excel_files[0]
-    else:
-        selected_file = excel_files[0]
-    
-    print(f"\n📊 Выбран файл: {selected_file.name}")
-    
-    # Создаем CSV для редактирования
-    csv_file = ManualEditor.create_editable_csv(str(selected_file))
-    if not csv_file:
-        return
-    
-    print("\n📝 ИНСТРУКЦИЯ ПО РЕДАКТИРОВАНИЮ:")
-    print("1. Откройте файл в Excel или Google Sheets")
-    print("2. Отредактируйте столбцы:")
-    print("   - edited_title: новый заголовок товара")
-    print("   - edited_features: характеристики через точку с запятой")
-    print("3. Сохраните файл")
-    print("4. Вернитесь в программу и запустите генерацию")
-    
-    print(f"\n📁 Файл для редактирования: {csv_file}")
-
-def batch_processing():
-    """Пакетная обработка всех файлов в папке"""
-    print("\n" + "="*60)
-    print("📁 ПАКЕТНАЯ ОБРАБОТКА")
-    print("="*60)
-    
-    # Поиск Excel файлов
-    excel_files = list(Path(".").glob("*.xlsx")) + list(Path(".").glob("*.xls"))
-    
-    if not excel_files:
-        print("❌ Excel файлы не найдены")
-        return
-    
-    print(f"\n📊 Найдено Excel файлов: {len(excel_files)}")
-    
-    all_results = []
-    
-    for excel_file in excel_files:
-        print(f"\n🔄 Обработка: {excel_file.name}")
+    # Информация о системе
+    with st.expander("ℹ️ О программе"):
+        st.markdown("""
+        **Auto-Parts Hybrid Infographic Generator v8.0**
+        
+        Возможности:
+        - 📊 Загрузка данных из Excel
+        - 🎨 Гибридный подход: шаблоны + автоматическая генерация
+        - ✏️ Ручное редактирование текстов
+        - 📁 Пакетная обработка
+        - 🚀 Быстрая генерация инфографик
+        
+        Поддерживаемые форматы:
+        - Вход: Excel (.xlsx, .xls)
+        - Выход: PNG, JPG
+        
+        Требования:
+        - pandas
+        - Pillow (PIL)
+        - openpyxl
+        """)
+        
+        # Проверка библиотек
+        st.markdown("**Проверка установленных библиотек:**")
+        col1, col2, col3 = st.columns(3)
         
         try:
-            generator = HybridInfographicGenerator("templates")
-            output_dir = f"batch_output_{excel_file.stem}"
-            
-            results = generator.generate_from_excel(
-                str(excel_file),
-                output_dir=output_dir,
-                use_templates=True
-            )
-            
-            success_count = sum(1 for r in results if r['success'])
-            all_results.append({
-                'file': excel_file.name,
-                'total': len(results),
-                'success': success_count,
-                'output_dir': output_dir
-            })
-            
-            print(f"   ✅ Успешно: {success_count}/{len(results)}")
-            
-        except Exception as e:
-            print(f"   ❌ Ошибка: {e}")
-            all_results.append({
-                'file': excel_file.name,
-                'error': str(e)
-            })
-    
-    # Сводный отчет
-    print("\n" + "="*60)
-    print("📊 СВОДНЫЙ ОТЧЕТ ПО ПАКЕТНОЙ ОБРАБОТКЕ")
-    print("="*60)
-    
-    total_files = len(all_results)
-    total_products = sum(r.get('total', 0) for r in all_results if 'total' in r)
-    total_success = sum(r.get('success', 0) for r in all_results if 'success' in r)
-    
-    print(f"\n📁 Всего обработано файлов: {total_files}")
-    print(f"📊 Всего товаров: {total_products}")
-    print(f"✅ Успешно создано инфографик: {total_success}")
-    
-    print("\n📂 Папки с результатами:")
-    for result in all_results:
-        if 'output_dir' in result:
-            print(f"   • {result['output_dir']}/ - {result['file']}")
-
-def configuration():
-    """Настройки и конфигурация"""
-    print("\n" + "="*60)
-    print("🛠️ НАСТРОЙКИ И КОНФИГУРАЦИЯ")
-    print("="*60)
-    
-    print("\n⚙️ ТЕКУЩИЕ НАСТРОЙКИ:")
-    
-    templates_dir = Path("templates")
-    template_count = len(list(templates_dir.glob("*.png"))) + len(list(templates_dir.glob("*.jpg")))
-    print(f"📁 Папка шаблонов: {templates_dir.absolute()}")
-    print(f"📄 Количество шаблонов: {template_count}")
-    
-    # Проверяем необходимые библиотеки
-    print("\n📦 ПРОВЕРКА БИБЛИОТЕК:")
-    
-    try:
-        import pandas
-        print("✅ pandas: установлен")
-    except:
-        print("❌ pandas: НЕ УСТАНОВЛЕН")
-        print("   Установите: pip install pandas openpyxl")
-    
-    try:
-        from PIL import Image
-        print("✅ Pillow (PIL): установлен")
-    except:
-        print("❌ Pillow: НЕ УСТАНОВЛЕН")
-        print("   Установите: pip install Pillow")
-    
-    print("\n🎯 ВОЗМОЖНЫЕ ДЕЙСТВИЯ:")
-    print("1. 📦 Установить недостающие библиотеки")
-    print("2. 🗑️ Очистить все выходные папки")
-    print("3. 🔄 Сбросить настройки")
-    print("0. ↩️ Назад")
-    
-    choice = input("\nВыберите действие: ").strip()
-    
-    if choice == "1":
-        print("\n📦 УСТАНОВКА БИБЛИОТЕК")
-        print("="*40)
-        print("Выполните в командной строке:")
-        print("\npip install pandas openpyxl Pillow")
-        print("\nИли все сразу:")
-        print("pip install pandas openpyxl Pillow")
-    
-    elif choice == "2":
-        confirm = input("\n⚠️ Удалить ВСЕ выходные папки? (y/n): ").strip().lower()
-        if confirm == 'y':
-            output_folders = [p for p in Path(".").iterdir() 
-                            if p.is_dir() and p.name.startswith(('output_', 'batch_output_', 'quick_start'))]
-            
-            for folder in output_folders:
-                try:
-                    import shutil
-                    shutil.rmtree(folder)
-                    print(f"🗑️ Удалена папка: {folder.name}")
-                except:
-                    print(f"❌ Не удалось удалить: {folder.name}")
-    
-    elif choice == "3":
-        confirm = input("\n⚠️ Сбросить все настройки? (y/n): ").strip().lower()
-        if confirm == 'y':
-            # Удаляем папки
-            folders_to_remove = ['templates', 'config']
-            for folder in folders_to_remove:
-                if Path(folder).exists():
-                    import shutil
-                    shutil.rmtree(folder)
-                    print(f"🗑️ Удалена папка: {folder}")
-            
-            print("\n✅ Настройки сброшены")
-            print("   Перезапустите программу")
+            import pandas
+            col1.success("✅ pandas")
+        except:
+            col1.error("❌ pandas")
+        
+        try:
+            from PIL import Image
+            col2.success("✅ Pillow")
+        except:
+            col2.error("❌ Pillow")
+        
+        try:
+            import openpyxl
+            col3.success("✅ openpyxl")
+        except:
+            col3.error("❌ openpyxl")
 
 # ============================================================================
 # 🎯 ТОЧКА ВХОДА
 # ============================================================================
 
 if __name__ == "__main__":
-    try:
-        # Проверяем необходимые библиотеки
-        required_packages = ['pandas', 'PIL']
-        missing_packages = []
-        
-        for package in required_packages:
-            try:
-                if package == 'PIL':
-                    __import__('PIL')
-                else:
-                    __import__(package)
-            except ImportError:
-                missing_packages.append(package)
-        
-        if missing_packages:
-            print("\n❌ ОТСУТСТВУЮТ НЕОБХОДИМЫЕ БИБЛИОТЕКИ")
-            print("="*50)
-            print("Для работы программы необходимы:")
-            for package in missing_packages:
-                print(f"• {package}")
-            
-            print("\n📦 УСТАНОВИТЕ КОМАНДОЙ:")
-            print("pip install pandas openpyxl Pillow")
-            
-            install_now = input("\nУстановить сейчас? (y/n): ").strip().lower()
-            if install_now == 'y':
-                import subprocess
-                import sys
-                
-                print("\n📦 Устанавливаю библиотеки...")
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "openpyxl", "Pillow"])
-                print("\n✅ Библиотеки установлены. Перезапустите программу.")
-            else:
-                print("\n⚠️ Установите библиотеки и перезапустите программу")
-            
-            input("\nНажмите Enter для выхода...")
-            sys.exit(1)
-        
-        # Запускаем главное меню
-        main_menu_hybrid()
-        
-    except KeyboardInterrupt:
-        print("\n\n👋 Программа прервана пользователем")
-    except Exception as e:
-        print(f"\n❌ Критическая ошибка: {e}")
-        import traceback
-        traceback.print_exc()
-        print("\n📝 Попробуйте:")
-        print("1. Проверить установку библиотек")
-        print("2. Перезапустить программу")
-        print("3. Создать issue с описанием ошибки")
-    
-    finally:
-        print("\n" + "="*80)
-        print("🎉 Спасибо за использование Auto-Parts Hybrid Generator!")
-        print("="*80)
+    main()
