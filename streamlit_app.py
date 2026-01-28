@@ -2086,28 +2086,33 @@ def main():
     print("📖 ИНСТРУКЦИЯ ПО ИСПОЛЬЗОВАНИЮ:")
     print("="*70)
     
+    # Вывод текста инструкции
     print("""
-1. ПОДГОТОВКА ДАННЫХ:
+1. ПОДГОТВКА ДАННЫХ:
    - Создайте Excel файл с данными автозапчастей
    - Обязательные колонки: Название, Цена, Бренд
    - Рекомендуемые колонки: OEM, Старая цена, Категория
 
 2. ГЕНЕРАЦИЯ ИНФОГРАФИК:
-   ```python
-   # Импортируйте необходимые классы
-   from auto_infographic import EnhancedAutoPartsBatchGenerator, TemplateStyle
-   import pandas as pd
-   
-   # Загрузите данные
-   df = pd.read_excel('ваши_данные.xlsx')
-   
-   # Создайте генератор
-   generator = EnhancedAutoPartsBatchGenerator(TemplateStyle.AUTO_MODERN)
-   
-   # Сгенерируйте инфографики с подложками
-   results = generator.generate_from_dataframe(
-       df, 
-       output_dir='мои_инфографики',
-       use_background=True,
-       background_type='product_card'
-   )
+""")
+    
+    # Вывод кода для генерации инфографики
+    print("""
+# Импортируйте необходимые классы
+from auto_infographic import EnhancedAutoPartsBatchGenerator, TemplateStyle
+import pandas as pd
+
+# Загрузите данные
+df = pd.read_excel('ваши_данные.xlsx')
+
+# Создайте генератор
+generator = EnhancedAutoPartsBatchGenerator(TemplateStyle.AUTO_MODERN)
+
+# Сгенерируйте инфографики с подложками
+results = generator.generate_from_dataframe(
+    df, 
+    output_dir='мои_инфографики',
+    use_background=True,
+    background_type='product_card'
+)
+""")
